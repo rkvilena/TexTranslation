@@ -7,7 +7,8 @@ import tkinter as tk
 import cv2
 import pygetwindow as gw
 import numpy as np
-from PIL import ImageGrab, ImageTk, Image
+from mss import mss
+from PIL import Image
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
@@ -22,9 +23,13 @@ class App:
         self.root_sbox_btn = tk.Button(self.root, text = 'Open Screenbox', bd = '5', command = self.__open_screenbox)
         self.root_sbox_btn.pack(anchor=tk.CENTER)
 
+        self.sct = mss()
+        self.pause = False
+
         # Flags
         self.mode_deletemode = False
         self.screenbox_open = False
+        self.capturemode = False
 
         # Create a canvas to display the captured image
         # Testing purpose, will be deleted
@@ -47,33 +52,41 @@ class App:
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
 
         self.screenbox.bind("d", self.__deletemode)
-        self.screenbox.bind("c", lambda event: self.capture_screen(event))
+        self.screenbox.bind("c", lambda event: self.capture_toogle(event))
 
         self.screenbox_open = True
 
         self.put_text(0, 0, "SIUUU")
         self.put_text(100, 100, "SLEPET")
 
+        self.capture_screen_mss()
         self.screenbox.mainloop()
 
-    def capture_screen(self, event=None):
+    def capture_screen_pyautogui(self, event=None):
         # Credit to 'tkcap' for the reference
         x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
         w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
         ss = np.array(pyautogui.screenshot(region=(x, y, w, h)).convert('RGB'))
         self.image = cv2.cvtColor(ss, cv2.COLOR_RGB2BGR)  
 
-        self.__display_image()
+    def capture_toogle(self, event=None):
+        self.pause = not self.pause
 
-    def __display_image(self):
-        # Convert the OpenCV image to Tkinter format
-        # Test-purpose function
-        img = ImageTk.PhotoImage(Image.fromarray(cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)))
+    def capture_screen_mss(self, event=None) -> None:
+        cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
+        print("[Process] Waiting...")
 
-        # Update the canvas with the new image
-        self.canvas.config(width=img.width(), height=img.height())
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
-        self.canvas.image = img
+        if not self.pause:
+            print("[Execute] Capture Screen.")
+            x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
+            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
+            mon = {'top': y, 'left':x, 'width':w, 'height':h}
+
+            sct_img = self.sct.grab(mon)
+            img = Image.frombytes('RGB', (sct_img.size.width, sct_img.size.height), sct_img.rgb)
+            img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            cv2.imshow('windowframe', np.array(img_bgr))
+        self.screenbox.after(100, self.capture_screen_mss)
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return
@@ -99,14 +112,12 @@ class App:
 
     def __close_screenbox(self) -> None:
         self.screenbox_open = False
+        self.capturemode = False
         self.screenbox.destroy()
 
     def window_centered(self, window, w, h) -> None:
         screen_w = window.winfo_screenwidth()
         screen_h = window.winfo_screenheight()
-
-        print(screen_w)
-        print(screen_h)
 
         x = (screen_w - w) // 2
         y = (screen_h - h) // 2
