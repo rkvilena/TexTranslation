@@ -7,7 +7,7 @@ if __name__ == '__main__':
         tdr = TextDetectionRecognition(['en'])
         tl = Translator('id')
 
-        tdr.load_image(str(input()))
+        tdr.load_image_file(str(input()))
         start = time.time()
         tdr.scan()
         res = tdr.get_result()

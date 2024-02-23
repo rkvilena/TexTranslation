@@ -7,29 +7,51 @@ import tkinter as tk
 import cv2
 import pygetwindow as gw
 import numpy as np
+import time
+from threading import Thread
+from queue import Queue
 from mss import mss
 from PIL import Image
+from translator import Translator
+from textdetrec import TextDetectionRecognition
+from torch.multiprocessing import Process
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 
 class App:
     def __init__(self, w=400, h=200) -> None:
+        # Root
         self.root = tk.Tk()
         self.root.title(APP_NAME)
         self.window_centered(self.root,w,h)
 
+        # Screenbox
         self.screenbox = None
         self.root_sbox_btn = tk.Button(self.root, text = 'Open Screenbox', bd = '5', command = self.__open_screenbox)
         self.root_sbox_btn.pack(anchor=tk.CENTER)
 
+        # Queue
+        self.queue = Queue(1)
+
+        # Thread
+        self.thread = Thread(target=self.detect_recognize_translate)
+        self.thread.daemon = True
+
+        # Screen capture
         self.sct = mss()
-        self.pause = False
+        self.captured_img = None
+
+        # Detrec and translator
+        self.detrec = TextDetectionRecognition(['en'])
+        self.tl = Translator('id')
 
         # Flags
         self.mode_deletemode = False
         self.screenbox_open = False
         self.capturemode = False
+        self.pause = False
+        self.inprocess = False
 
         # Create a canvas to display the captured image
         # Testing purpose, will be deleted
@@ -38,6 +60,7 @@ class App:
         self.image = None
     
     def run(self) -> None:
+        self.thread.start()
         self.root.mainloop()
 
     def __open_screenbox(self) -> None:
@@ -73,10 +96,11 @@ class App:
         self.pause = not self.pause
 
     def capture_screen_mss(self, event=None) -> None:
-        cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
+        # cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
         print("[Process] Waiting...")
-
-        if not self.pause:
+        if not self.queue.empty():
+            self.inprocess = self.queue.get()
+        if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
             x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
             w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
@@ -84,9 +108,26 @@ class App:
 
             sct_img = self.sct.grab(mon)
             img = Image.frombytes('RGB', (sct_img.size.width, sct_img.size.height), sct_img.rgb)
-            img_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-            cv2.imshow('windowframe', np.array(img_bgr))
-        self.screenbox.after(100, self.capture_screen_mss)
+
+            self.captured_img = np.array(img)
+            self.inprocess = True
+
+            # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
+            # cv2.imshow('windowframe', np.array(img_bgr))
+        print("-----------------")
+        self.screenbox.after(500, self.capture_screen_mss)
+
+    def detect_recognize_translate(self):
+        while True:
+            if self.captured_img is not None:
+                print("[Thread] OCR Process started")
+                self.detrec.load_image_arr(self.captured_img)
+                self.detrec.read()
+                tled = self.tl.translate(text=self.tl.convert_to_string(self.detrec.get_result()))
+                print(tled)
+
+                self.captured_img = None
+                self.queue.put(False)
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return

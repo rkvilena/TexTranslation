@@ -11,13 +11,21 @@ class TextDetectionRecognition:
         self.detrectime = 0.0
         self.readresult: tuple(list,str,float)
 
-    def load_image(self, imagepath):
+    def load_image_file(self, imagepath):
         self.image = cv2.imread(imagepath)
+    
+    def load_image_arr(self, imagearr):
+        self.image = imagearr
 
     def scan(self):
         drstart = time.time()
         self.readresult = self.reader.readtext(self.image)
         self.detrectime += time.time()-drstart
+
+    def read(self):
+        self.load_image_arr(self.image)
+        self.scan()
+        return self.get_result()
     
     def save_drawn_img(self):
         cv2.imwrite("detection_res3.jpg", self.drawnimg)
