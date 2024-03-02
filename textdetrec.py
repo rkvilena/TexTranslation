@@ -9,7 +9,7 @@ class TextDetectionRecognition:
         self.image      = None
         self.drawnimg   = None
         self.detrectime = 0.0
-        self.readresult: tuple(list,str,float)
+        self.readresult: tuple[list[list[int,int]],str,float]
 
     def load_image_file(self, imagepath):
         self.image = cv2.imread(imagepath)
@@ -35,7 +35,9 @@ class TextDetectionRecognition:
         cv2.imwrite("detection_res3.jpg", self.drawnimg)
 
     def get_result(self):
-        return self.readresult
+        boxes = [item[0] for item in self.readresult]
+        texts = [item[1] for item in self.readresult]
+        return [boxes, texts]
         # # Non-multiprocessing code
         # # To be updated
         # copy = self.image.copy()

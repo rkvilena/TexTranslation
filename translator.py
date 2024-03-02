@@ -17,7 +17,7 @@ class Translator:
         # Very long string makes translation didn't apply to some string
         # It works properly if directly in the website
         # Need to be splitted into maybe 2 - 5 batch
-        return " ; ".join([text[1] for text in textlist])
+        return " || ".join(textlist)
 
     def translate(self, text):
         result = self.model.translate(text=text)

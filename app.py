@@ -32,7 +32,8 @@ class App:
         self.root_sbox_btn.pack(anchor=tk.CENTER)
 
         # Queue
-        self.queue = Queue(1)
+        self.flagqueue = Queue(1)
+        self.valqueue = Queue(2)
 
         # Thread
         self.thread = Thread(target=self.detect_recognize_translate)
@@ -79,8 +80,8 @@ class App:
 
         self.screenbox_open = True
 
-        self.put_text(0, 0, "SIUUU")
-        self.put_text(100, 100, "SLEPET")
+        # self.put_text(0, 0, "SIUUU")
+        # self.put_text(100, 100, "SLEPET")
 
         self.capture_screen_mss()
         self.screenbox.mainloop()
@@ -98,8 +99,8 @@ class App:
     def capture_screen_mss(self, event=None) -> None:
         # cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
         print("[Process] Waiting...")
-        if not self.queue.empty():
-            self.inprocess = self.queue.get()
+        if not self.flagqueue.empty():
+            self.inprocess = self.flagqueue.get()
         if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
             x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
@@ -114,20 +115,32 @@ class App:
 
             # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
             # cv2.imshow('windowframe', np.array(img_bgr))
-        print("-----------------")
+        # print("-----------------")
+        if not self.valqueue.empty():
+            boxtext = self.valqueue.get()
+            for x in range(len(boxtext[0])):
+                self.put_text(boxtext[0][x][0][0], boxtext[0][x][0][1], boxtext[1][x])
+            
         self.screenbox.after(500, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
         while True:
             if self.captured_img is not None:
+                start = time.time()
                 print("[Thread] OCR Process started")
                 self.detrec.load_image_arr(self.captured_img)
-                self.detrec.read()
-                tled = self.tl.translate(text=self.tl.convert_to_string(self.detrec.get_result()))
-                print(tled)
+                res = self.detrec.read()
+                tled = self.tl.translate(text=self.tl.convert_to_string(res[1]))
+                finaltl = tled[0].split('||')
+                print("[-----------------------------]")
+                print(res[0])
+                print(finaltl)
+                print(time.time() - start)
+                print("[-----------------------------]\n")
 
                 self.captured_img = None
-                self.queue.put(False)
+                self.flagqueue.put(False)
+                self.valqueue.put([res[0], finaltl])
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return
@@ -143,6 +156,7 @@ class App:
     def put_text(self, x, y, text) -> None:
         # Put a translated text into itw corresponding coordinate
         # Prototype
+        
         textlabel = tk.Label(self.screenbox, text=text)
         textlabel.place(x=x,y=y)
         textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
