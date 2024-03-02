@@ -19,7 +19,11 @@ class TextDetectionRecognition:
 
     def scan(self):
         drstart = time.time()
-        self.readresult = self.reader.readtext(self.image)
+        self.readresult = self.reader.readtext(
+            self.image,
+            paragraph=True,
+            x_ths=0,
+        )
         self.detrectime += time.time()-drstart
 
     def read(self):
