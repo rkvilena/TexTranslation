@@ -22,7 +22,7 @@ class Translator:
     def translate(self, text):
         result = self.model.translate(text=text)
         print(len(result))
-        return result.split(" ; ")
+        return result.split('||')
     
     def show_tr_duration(self):
         print(f"Translation time: {self.trtime}")

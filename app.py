@@ -44,8 +44,13 @@ class App:
         self.captured_img = None
 
         # Detrec and translator
+        lang_list = ['en']
+        self.lang_selected = tk.StringVar()
+        self.lang_selected.set(lang_list[0])
         self.detrec = TextDetectionRecognition(['en'])
         self.tl = Translator('id')
+        language_menu = tk.OptionMenu(self.root, self.lang_selected, *lang_list)
+        language_menu.pack()
 
         # Flags
         self.mode_deletemode = False
@@ -119,7 +124,13 @@ class App:
         if not self.valqueue.empty():
             boxtext = self.valqueue.get()
             for x in range(len(boxtext[0])):
-                self.put_text(boxtext[0][x][0][0], boxtext[0][x][0][1], boxtext[1][x])
+                self.put_text(
+                    x=boxtext[0][x][0][0], 
+                    y=boxtext[0][x][0][1],
+                    w=boxtext[0][x][2][0]-boxtext[0][x][0][0],
+                    h=boxtext[0][x][2][1]-boxtext[0][x][0][1],
+                    text=boxtext[1][x]
+                )
             
         self.screenbox.after(500, self.capture_screen_mss)
 
@@ -130,8 +141,7 @@ class App:
                 print("[Thread] OCR Process started")
                 self.detrec.load_image_arr(self.captured_img)
                 res = self.detrec.read()
-                tled = self.tl.translate(text=self.tl.convert_to_string(res[1]))
-                finaltl = tled[0].split('||')
+                finaltl = self.tl.translate(text=self.tl.convert_to_string(res[1]))
                 print("[-----------------------------]")
                 print(res[0])
                 print(finaltl)
@@ -153,12 +163,12 @@ class App:
             self.screenbox.config(bg="gray")
             self.screenbox.attributes('-alpha', 0.4)
 
-    def put_text(self, x, y, text) -> None:
+    def put_text(self, x, y, w, h, text) -> None:
         # Put a translated text into itw corresponding coordinate
         # Prototype
         
-        textlabel = tk.Label(self.screenbox, text=text)
-        textlabel.place(x=x,y=y)
+        textlabel = tk.Label(self.screenbox, text=text, wraplength=w, justify='left')
+        textlabel.place(x=x,y=y, width=w, height=h)
         textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
 
     def __destroy_text(self, event, object) -> None:
