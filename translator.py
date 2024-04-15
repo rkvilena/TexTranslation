@@ -19,10 +19,9 @@ class Translator:
         # Need to be splitted into maybe 2 - 5 batch
         return " || ".join(textlist)
 
-    def translate(self, text):
-        result = self.model.translate(text=text)
-        print(len(result))
-        return result.split('||')
+    def translate(self, texts):
+        result = self.model.translate_batch(texts)
+        return result
     
     def show_tr_duration(self):
         print(f"Translation time: {self.trtime}")
