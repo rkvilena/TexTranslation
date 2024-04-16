@@ -16,19 +16,21 @@ class TextDetectionRecognition:
     
     def load_image_arr(self, imagearr):
         self.image = imagearr
+    
+    def lang_change(self, lang: list[str]):
+        print("Language change -> ", lang[0])
+        self.reader = easyocr.Reader(lang)
+        print("LEWAT")
 
-    def scan(self):
+    def read(self, wths = 0.7, pmode = False, yths = 0.5):
         drstart = time.time()
         self.readresult = self.reader.readtext(
             self.image,
-            paragraph=True,
-            x_ths=0,
+            width_ths=wths,
+            paragraph=pmode,
+            y_ths=yths,
         )
         self.detrectime += time.time()-drstart
-
-    def read(self):
-        self.load_image_arr(self.image)
-        self.scan()
         return self.get_result()
     
     def save_drawn_img(self):
