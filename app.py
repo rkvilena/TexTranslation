@@ -9,6 +9,7 @@ import pygetwindow as gw
 import numpy as np
 import time
 from threading import Thread
+from tkinter import messagebox
 from queue import Queue
 from mss import mss
 from PIL import Image
@@ -20,34 +21,42 @@ APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 
 class App:
-    def __init__(self, w=400, h=100) -> None:
+    def __init__(self, w=300, h=400) -> None:
         # Root
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.window_centered(self.root,w,h)
         self.dscreen_w = self.root.winfo_screenwidth()
         self.dscreen_h = self.root.winfo_screenheight()
+        self.window_centered(self.root,w,h)
 
         # Screenbox
         self.screenbox = None
-        self.root_sbox_btn = tk.Button(self.root, text = 'Open Screenbox', bd = '5', command = self.__open_screenbox)
-        self.root_sbox_btn.pack(anchor=tk.CENTER)
+        self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
+        self.root_sbox_btn.grid(column=0, row=0, columnspan=2)
         self.root_sbox_light = tk.Button(self.root, bg="red", width=3)
         self.root_sbox_light.config(state="disabled")
-        self.root_sbox_light.pack()
-        self.root_sbox_btn.pack(side="left")
-        self.root_sbox_light.pack(side="left")
-        lang_list = ['en', 'ja']
-        self.lang_selected = tk.StringVar()
-        self.lang_selected.set(lang_list[0])
-        language_menu_src = tk.OptionMenu(self.root, self.lang_selected, *lang_list)
-        language_menu_src.pack(side="right")
-        language_menu_target = tk.OptionMenu(self.root, self.lang_selected, *lang_list)
-        language_menu_target.pack(side="right")
+        self.root_sbox_light.grid(column=2, row=0)
+
+        lang_list = ['en', 'ja', 'id']
+        self.lang_selected_src = tk.StringVar()
+        self.lang_selected_src.set(lang_list[0])
+        self.lang_selected_target = tk.StringVar()
+        self.lang_selected_target.set(lang_list[2])
+        language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
+        srclang_lbl = tk.Label(self.root, text="Source Language")
+        srclang_lbl.grid(column=0, row=1)
+        targetlang_lbl = tk.Label(self.root, text="Target Language")
+        targetlang_lbl.grid(column=0, row=2)
+        language_menu_src.grid(column=1, row=1)
+        language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
+        language_menu_target.grid(column=1, row=2)
+
+        self.paragraphmode = tk.BooleanVar()
+        self.root_ispgraph_btn = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
+        self.root_ispgraph_btn.grid(column=0,row=3)
 
         # Queue
-        self.flagqueue = Queue(1)
-        self.valqueue = Queue(2)
+        self.valqueue = Queue(1)
 
         # Thread
         self.thread = Thread(target=self.detect_recognize_translate)
@@ -58,8 +67,8 @@ class App:
         self.captured_img = None
 
         # Detrec and translator
-        self.detrec = TextDetectionRecognition(['ja'])
-        self.tl = Translator('id')
+        self.detrec = TextDetectionRecognition(['en', 'ja'])
+        self.tl = Translator(self.lang_selected_target.get())
 
         # Flags
         self.mode_deletemode = False
@@ -68,15 +77,18 @@ class App:
         self.pause = True
         self.inprocess = False
 
-        # Create a canvas to display the captured image
-        # Testing purpose, will be deleted
-        self.canvas = tk.Canvas()
-        self.canvas.pack()
-        self.image = None
+        self.placedlabel = []
     
     def run(self) -> None:
         self.thread.start()
         self.root.mainloop()
+    
+    def onchange_srclang(self, *args) -> None:
+        # Code still not supported multi language
+        # messagebox.showinfo("Info", "Please wait... (DON'T CLICK ANYTHING)")
+        thread = Thread(target=self.detrec.lang_change, args=([self.lang_selected_src.get()],))
+        thread.start()
+        print("LEWAT")
 
     def __open_screenbox(self) -> None:
         if self.screenbox_open: return
@@ -97,44 +109,21 @@ class App:
         self.capture_screen_mss()
         self.screenbox.mainloop()
 
-    def capture_screen_pyautogui(self, event=None):
-        # Credit to 'tkcap' for the reference
-        x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
-        w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
-        ss = np.array(pyautogui.screenshot(region=(x, y, w, h)).convert('RGB'))
-        self.image = cv2.cvtColor(ss, cv2.COLOR_RGB2BGR)  
-
-    def capture_toogle(self, event=None):
+    def capture_toogle(self, event=None) -> None:
         self.pause = not self.pause
         color = "red" if self.pause else "green"
         self.root_sbox_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
+        # Credit to 'tkcap' for the reference
         # cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
         # print("[Process] Waiting...")
-        if not self.flagqueue.empty():
-            self.inprocess = self.flagqueue.get()
-        if not self.pause and not self.inprocess:
-            print("[Execute] Capture Screen.")
-            x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
-            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
-            mon = {'top': y, 'left':x, 'width':w, 'height':h}
-
-            sct_img = self.sct.grab(mon)
-            img = Image.frombytes('RGB', (sct_img.size.width, sct_img.size.height), sct_img.rgb)
-
-            self.captured_img = np.array(img)
-            self.inprocess = True
-
-            # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
-            # cv2.imshow('windowframe', np.array(img_bgr))
-        # print("-----------------")
+        # if not self.flagqueue.empty():
+        #     self.inprocess = self.flagqueue.get()
         if not self.valqueue.empty():
             try:
                 boxtext = self.valqueue.get()
                 print("boxtext len: ", len(boxtext[0]))
-                # print(boxtext[0][8])
-                # print(boxtext[1][8])
                 for x in range(len(boxtext[0])):
                     self.put_text(
                         x=boxtext[0][x][0][0], 
@@ -149,6 +138,21 @@ class App:
                 # !! FOR DEVELOPMENT ONLY
                 self.pause = True
                 self.root_sbox_light.config(bg="red")
+                self.inprocess = False
+        if not self.pause and not self.inprocess:
+            print("[Execute] Capture Screen.")
+            x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
+            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
+            mon = {'top': y, 'left':x, 'width':w, 'height':h}
+
+            sct_img = self.sct.grab(mon)
+            img = Image.frombytes('RGB', (sct_img.size.width, sct_img.size.height), sct_img.rgb)
+
+            self.captured_img = np.array(img)
+            self.inprocess = True
+
+            # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
+            # cv2.imshow('windowframe', np.array(img_bgr))
             
         self.screenbox.after(500, self.capture_screen_mss)
 
@@ -158,17 +162,19 @@ class App:
                 start = time.time()
                 print("[Thread] OCR Process started")
                 self.detrec.load_image_arr(self.captured_img)
-                res = self.detrec.read()
+                print("self.paragraphmode : ", self.paragraphmode.get())
+                res = self.detrec.read(
+                    pmode=self.paragraphmode.get(),
+                    yths=0.6,    
+                )
                 finaltl = self.tl.translate(texts=res[1])
                 print("[-----------------------------]")
-                # print(res[0])
                 print(res[1])
                 print(finaltl)
                 print(time.time() - start)
                 print("[-----------------------------]\n")
 
                 self.captured_img = None
-                self.flagqueue.put(False)
                 self.valqueue.put([res[0], finaltl])
 
     def __deletemode(self, event=None) -> None:
@@ -184,18 +190,18 @@ class App:
 
     def put_text(self, x, y, w, h, text) -> None:
         # Put a translated text into itw corresponding coordinate
-        # Prototype
+        # Need extensive customization in tkinter app side
+        # - width
+        # - width ths
+        # - paragraph true / false
+        # etc. try tinkering the documentation
         
         fontsize = ((h - 6) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
-        textlabel = tk.Label(self.screenbox, text=text, wraplength=w, justify='left', bg="green")
+        textlabel = tk.Label(self.screenbox, text=text, width=w+120, wraplength=w, justify="left")
         textlabel.place(x=x,y=y-10, width=w, height=h)
         textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
 
-        # textlabel = tk.Text(self.screenbox, width=w, height=h, wrap="word", bg="green")
-        # textlabel.insert(tk.END, text)
-        # textlabel.config(state="disabled")
-        # textlabel.place(x=x,y=y-10)
-        # textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
+        self.placedlabel.append(textlabel)
         
         # print("-----------------------------------------------")
         # print("text: ", text)
@@ -210,24 +216,25 @@ class App:
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
         object.destroy()
+    
+    def __destroy_all_text(self) -> None:
+        self.placedlabel = [l.destroy() for l in self.placedlabel]
 
     def __close_screenbox(self) -> None:
         self.screenbox_open = False
         self.capturemode = False
+        self.mode_deletemode = False
+        self.pause = True
+        self.inprocess = False
+        if len(self.placedlabel) != 0:
+            self.__destroy_all_text()
         self.screenbox.destroy()
 
-    def window_centered(self, window, w, h) -> None:
-        screen_w = window.winfo_screenwidth()
-        screen_h = window.winfo_screenheight()
-
-        x = (screen_w - w) // 2
-        y = (screen_h - h) // 2
+    def window_centered(self, window:tk.Tk, w, h) -> None:
+        x = (self.dscreen_w - w) // 2
+        y = (self.dscreen_h - h) // 2
 
         window.geometry(f"{w}x{h}+{x}+{y}")
-
-    def print_test(self, event=None) -> None:
-        # Modify as needed
-        print("Print Executed!")
 
 if __name__ == '__main__':
     app = App()
