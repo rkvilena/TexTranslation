@@ -5,10 +5,9 @@ import numpy as np
 
 class TextDetectionRecognition:
     def __init__(self, language: list[str]) -> None:
-        self.reader     = easyocr.Reader(language)
+        self.reader     = easyocr.Reader(language, gpu=True)
         self.image      = None
         self.drawnimg   = None
-        self.detrectime = 0.0
         self.readresult: tuple[list[list[int,int]],str,float]
 
     def load_image_file(self, imagepath):
@@ -23,15 +22,18 @@ class TextDetectionRecognition:
         print("LEWAT")
 
     def read(self, wths = 0.7, pmode = False, yths = 0.5):
-        drstart = time.time()
+        self.grayscale_image()
         self.readresult = self.reader.readtext(
             self.image,
             width_ths=wths,
             paragraph=pmode,
             y_ths=yths,
         )
-        self.detrectime += time.time()-drstart
         return self.get_result()
+
+    def grayscale_image(self):
+        self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        # _, self.image = cv2.threshold(self.image, 127, 255, cv2.THRESH_BINARY)
     
     def save_drawn_img(self):
         cv2.imwrite("detection_res3.jpg", self.drawnimg)
@@ -40,28 +42,6 @@ class TextDetectionRecognition:
         boxes = [item[0] for item in self.readresult]
         texts = [item[1] for item in self.readresult]
         return [boxes, texts]
-        # # Non-multiprocessing code
-        # # To be updated
-        # copy = self.image.copy()
-        # for (boxes, text, _) in self.readresult:
-        #     trstart = time.time()
-        #     listofpoints = np.array(boxes, dtype=int)
-        #     translated = self.translator.translate(text=text)
-        #     (x, y) = (boxes[0][0], (boxes[0][1]+boxes[3][1])/2)
-        #     boxw = abs(boxes[0][0] - boxes[1][0]) / 100.0
-        #     self.trtime += time.time() - trstart
-
-        #     print(f'Translation: {translated}')
-
-        #     # cv2.polylines(copy, [pts], isClosed=True, color=(0,255,0), thickness=2)
-        #     cv2.fillPoly(copy, [listofpoints], color=(255,255,255))
-        #     cv2.putText(
-        #         copy, translated, 
-        #         [int(x), int(y)], 
-        #         cv2.FONT_HERSHEY_SIMPLEX, 
-        #         boxw / 4, (0,0,0), 1
-        #     )
-        # self.drawnimg = copy
 
     def show_detrec_duration(self):
         print(f"Detection & Recognition time: {self.detrectime}")

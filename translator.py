@@ -1,4 +1,5 @@
 import deep_translator as deeptl
+import time
 
 class Translator:
     def __init__(self, target: str) -> None:
@@ -13,14 +14,10 @@ class Translator:
     def change_lang_target(self, lang_target: str):
         self.model.target = lang_target
 
-    def convert_to_string(self, textlist):
-        # Very long string makes translation didn't apply to some string
-        # It works properly if directly in the website
-        # Need to be splitted into maybe 2 - 5 batch
-        return " || ".join(textlist)
-
     def translate(self, texts):
+        start = time.time()
         result = self.model.translate_batch(texts)
+        print(time.time() - start)
         return result
     
     def show_tr_duration(self):

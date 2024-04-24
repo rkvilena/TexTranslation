@@ -1,10 +1,10 @@
-import pyautogui
-import win32gui
-import win32con
-import win32api
-import tkcap
+# import pyautogui
+# import win32gui
+# import win32con
+# import win32api
+# import tkcap
 import tkinter as tk
-import cv2
+# import cv2
 import pygetwindow as gw
 import numpy as np
 import time
@@ -29,13 +29,13 @@ class App:
         self.dscreen_h = self.root.winfo_screenheight()
         self.window_centered(self.root,w,h)
 
-        # Screenbox
         self.screenbox = None
+        self.sbw = 500
+        self.sbh = 250
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
-        self.root_sbox_btn.grid(column=0, row=0, columnspan=2)
         self.root_sbox_light = tk.Button(self.root, bg="red", width=3)
         self.root_sbox_light.config(state="disabled")
-        self.root_sbox_light.grid(column=2, row=0)
+        
 
         lang_list = ['en', 'ja', 'id']
         self.lang_selected_src = tk.StringVar()
@@ -44,17 +44,17 @@ class App:
         self.lang_selected_target.set(lang_list[2])
         language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
         srclang_lbl = tk.Label(self.root, text="Source Language")
-        srclang_lbl.grid(column=0, row=1)
         targetlang_lbl = tk.Label(self.root, text="Target Language")
-        targetlang_lbl.grid(column=0, row=2)
-        language_menu_src.grid(column=1, row=1)
         language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
-        language_menu_target.grid(column=1, row=2)
+        
 
+        self.sb_size = tk.StringVar(self.root, "700x450")
+        self.sizeslist = ("400x300", "700x450", "1000x600", "1300x750")
         self.paragraphmode = tk.BooleanVar()
-        self.root_ispgraph_btn = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
-        self.root_ispgraph_btn.grid(column=0,row=3)
-
+        self.gpumode = tk.BooleanVar()
+        self.root_ispgraph = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
+        self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
+        
         # Queue
         self.valqueue = Queue(1)
 
@@ -77,7 +77,24 @@ class App:
         self.pause = True
         self.inprocess = False
 
-        self.placedlabel = []
+        self.placedlabel: list[tk.Label] = []
+
+        self.root_sbox_btn.grid(column=0, row=0, columnspan=2)
+        self.root_sbox_light.grid(column=2, row=0)
+        srclang_lbl.grid(column=0, row=1)
+        targetlang_lbl.grid(column=0, row=2)
+        language_menu_src.grid(column=1, row=1)
+        language_menu_target.grid(column=1, row=2)
+        self.root_ispgraph.grid(column=0,row=3)
+        self.root_usegpu.grid(column=0,row=4)
+        for x in range(len(self.sizeslist)):
+            r = tk.Radiobutton(
+                self.root,
+                text=self.sizeslist[x],
+                value=self.sizeslist[x],
+                variable=self.sb_size
+            )
+            r.grid(column=1, row=3+x)
     
     def run(self) -> None:
         self.thread.start()
@@ -90,13 +107,25 @@ class App:
         thread.start()
         print("LEWAT")
 
+    def __set_screenbox_size(self) -> None:
+        sbw: int
+        sbh: int
+        if self.sb_size.get() == self.sizeslist[0]: sbw, sbh = (400, 300)
+        elif self.sb_size.get() == self.sizeslist[1]: sbw, sbh = (700, 450)
+        elif self.sb_size.get() == self.sizeslist[2]: sbw, sbh = (1000, 600)
+        elif self.sb_size.get() == self.sizeslist[3]: sbw, sbh = (1300, 750)
+        self.sbw = sbw
+        self.sbh = sbh
+
     def __open_screenbox(self) -> None:
         if self.screenbox_open: return
 
         self.screenbox = tk.Toplevel(self.root)
         self.screenbox.title(SCREENBOX_NAME)
         # screenbox.overrideredirect(True)
-        self.window_centered(self.screenbox,800,450)
+        self.__set_screenbox_size()
+        self.window_centered(self.screenbox,self.sbw,self.sbh)
+        self.screenbox.resizable(False, False)
         self.screenbox.attributes("-transparentcolor", "white",'-topmost',1)
         self.screenbox.config(bg="white")
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
@@ -115,11 +144,6 @@ class App:
         self.root_sbox_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
-        # Credit to 'tkcap' for the reference
-        # cv2.namedWindow("windowframe", cv2.WINDOW_NORMAL)
-        # print("[Process] Waiting...")
-        # if not self.flagqueue.empty():
-        #     self.inprocess = self.flagqueue.get()
         if not self.valqueue.empty():
             try:
                 boxtext = self.valqueue.get()
@@ -159,19 +183,19 @@ class App:
     def detect_recognize_translate(self):
         while True:
             if self.captured_img is not None:
-                start = time.time()
                 print("[Thread] OCR Process started")
+                start = time.time()
                 self.detrec.load_image_arr(self.captured_img)
-                print("self.paragraphmode : ", self.paragraphmode.get())
+                # print("self.paragraphmode : ", self.paragraphmode.get())
                 res = self.detrec.read(
                     pmode=self.paragraphmode.get(),
                     yths=0.6,    
                 )
                 finaltl = self.tl.translate(texts=res[1])
                 print("[-----------------------------]")
+                print("detrec + tr time: ", time.time() - start)
                 print(res[1])
                 print(finaltl)
-                print(time.time() - start)
                 print("[-----------------------------]\n")
 
                 self.captured_img = None
@@ -196,22 +220,12 @@ class App:
         # - paragraph true / false
         # etc. try tinkering the documentation
         
-        fontsize = ((h - 6) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
+        # fontsize = ((h - 6) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
         textlabel = tk.Label(self.screenbox, text=text, width=w+120, wraplength=w, justify="left")
         textlabel.place(x=x,y=y-10, width=w, height=h)
         textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
 
         self.placedlabel.append(textlabel)
-        
-        # print("-----------------------------------------------")
-        # print("text: ", text)
-        # print("h: ", h)
-        # print("screenbox h: ", (self.screenbox.winfo_height() + 8))
-        # print("screen h: ", self.dscreen_h)
-        # print("fontsize: ", fontsize)
-        # print("fontwidth: ", textlabel.winfo_width())
-        # print("w: ", w)
-        # print("-----------------------------------------------")
 
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
@@ -219,6 +233,7 @@ class App:
     
     def __destroy_all_text(self) -> None:
         self.placedlabel = [l.destroy() for l in self.placedlabel]
+        self.placedlabel = []
 
     def __close_screenbox(self) -> None:
         self.screenbox_open = False
