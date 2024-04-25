@@ -22,7 +22,7 @@ APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 
 class App:
-    def __init__(self, w=300, h=400) -> None:
+    def __init__(self, w=400, h=400, src_lang="", target_lang="") -> None:
         # Root
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -34,13 +34,11 @@ class App:
         self.sbw = 500
         self.sbh = 250
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
-        self.root_sbox_light = tk.Button(self.root, bg="red", width=3)
-        self.root_sbox_light.config(state="disabled")
         
 
         lang_list = ['en', 'ja', 'id']
         self.lang_selected_src = tk.StringVar()
-        self.lang_selected_src.set(lang_list[0])
+        self.lang_selected_src.set(lang_list[1])
         self.lang_selected_target = tk.StringVar()
         self.lang_selected_target.set(lang_list[2])
         language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
@@ -79,9 +77,9 @@ class App:
         self.inprocess = False
 
         self.placedlabel: list[tk.Label] = []
+        self.labelcount = 0
 
         self.root_sbox_btn.grid(column=0, row=0, columnspan=2)
-        self.root_sbox_light.grid(column=2, row=0)
         srclang_lbl.grid(column=0, row=1)
         targetlang_lbl.grid(column=0, row=2)
         language_menu_src.grid(column=1, row=1)
@@ -124,6 +122,10 @@ class App:
 
         self.screenbox = tk.Toplevel(self.root)
         self.screenbox.title(SCREENBOX_NAME)
+        self.machine_light = tk.Button(self.screenbox, bg="red", width=3)
+        self.machine_light.config(state="disabled")
+        self.machine_light.pack(anchor="nw")
+
         # screenbox.overrideredirect(True)
         self.__set_screenbox_size()
         self.window_centered(self.screenbox,self.sbw,self.sbh)
@@ -143,7 +145,7 @@ class App:
     def capture_toogle(self, event=None) -> None:
         self.pause = not self.pause
         color = "red" if self.pause else "green"
-        self.root_sbox_light.config(bg=color)
+        self.machine_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
         if not self.valqueue.empty():
@@ -193,7 +195,7 @@ class App:
 
                 self.captured_img = None
                 self.pause = True
-                self.root_sbox_light.config(bg="red")
+                self.machine_light.config(bg="red")
                 self.inprocess = False
                 print("[-----------------------------]\n")
     
@@ -226,18 +228,21 @@ class App:
         
         # fontsize = ((h - 6) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
         textlabel = tk.Label(self.screenbox, text=text, width=w+120, wraplength=w, justify="left")
-        textlabel.place(x=x,y=y-10, width=w, height=h)
+        textlabel.place(x=x,y=y-10, width=w+10, height=h)
         textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
 
         self.placedlabel.append(textlabel)
+        self.labelcount += 1
 
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
         object.destroy()
+        self.labelcount -= 1
     
     def __destroy_all_text(self) -> None:
-        self.placedlabel = [l.destroy() for l in self.placedlabel]
+        if self.labelcount != 0: self.placedlabel = [l.destroy() for l in self.placedlabel]
         self.placedlabel = []
+        self.labelcount = 0
 
     def __close_screenbox(self) -> None:
         self.screenbox_open = False
