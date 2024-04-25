@@ -3,6 +3,7 @@
 # import win32con
 # import win32api
 # import tkcap
+import asyncio
 import tkinter as tk
 # import cv2
 import pygetwindow as gw
@@ -56,7 +57,7 @@ class App:
         self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
         
         # Queue
-        self.valqueue = Queue(1)
+        self.valqueue = Queue(5)
 
         # Thread
         self.thread = Thread(target=self.detect_recognize_translate)
@@ -67,7 +68,7 @@ class App:
         self.captured_img = None
 
         # Detrec and translator
-        self.detrec = TextDetectionRecognition(['en', 'ja'])
+        self.detrec = TextDetectionRecognition([self.lang_selected_src.get()])
         self.tl = Translator(self.lang_selected_target.get())
 
         # Flags
@@ -100,12 +101,13 @@ class App:
         self.thread.start()
         self.root.mainloop()
     
-    def onchange_srclang(self, *args) -> None:
+    def onchange_srclang(self, *args) -> str:
         # Code still not supported multi language
         # messagebox.showinfo("Info", "Please wait... (DON'T CLICK ANYTHING)")
-        thread = Thread(target=self.detrec.lang_change, args=([self.lang_selected_src.get()],))
-        thread.start()
-        print("LEWAT")
+        # thread = Thread(target=self.detrec.lang_change, args=([self.lang_selected_src.get()],))
+        # thread.start()
+        print("Change Language")
+        self.root.destroy()
 
     def __set_screenbox_size(self) -> None:
         sbw: int
@@ -147,22 +149,17 @@ class App:
         if not self.valqueue.empty():
             try:
                 boxtext = self.valqueue.get()
-                print("boxtext len: ", len(boxtext[0]))
-                for x in range(len(boxtext[0])):
-                    self.put_text(
-                        x=boxtext[0][x][0][0], 
-                        y=boxtext[0][x][0][1],
-                        w=boxtext[0][x][2][0]-boxtext[0][x][0][0],
-                        h=boxtext[0][x][2][1]-boxtext[0][x][0][1],
-                        text=boxtext[1][x]
-                    )
+                print(boxtext)
+                self.put_text(
+                    x=boxtext[0][0][0], 
+                    y=boxtext[0][0][1],
+                    w=boxtext[0][2][0]-boxtext[0][0][0],
+                    h=boxtext[0][2][1]-boxtext[0][0][1],
+                    text=boxtext[1]
+                )
             except Exception as e:
                 print("[error] ", e, "\n")
-            finally:
-                # !! FOR DEVELOPMENT ONLY
-                self.pause = True
-                self.root_sbox_light.config(bg="red")
-                self.inprocess = False
+
         if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
             x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
@@ -184,22 +181,29 @@ class App:
         while True:
             if self.captured_img is not None:
                 print("[Thread] OCR Process started")
+                print("[-----------------------------]")
                 start = time.time()
                 self.detrec.load_image_arr(self.captured_img)
-                # print("self.paragraphmode : ", self.paragraphmode.get())
                 res = self.detrec.read(
                     pmode=self.paragraphmode.get(),
                     yths=0.6,    
                 )
-                finaltl = self.tl.translate(texts=res[1])
-                print("[-----------------------------]")
-                print("detrec + tr time: ", time.time() - start)
-                print(res[1])
-                print(finaltl)
-                print("[-----------------------------]\n")
+                print("detrec time: ", time.time() - start)
+                asyncio.run(self.start_asynctl(res[0],res[1]))
 
                 self.captured_img = None
-                self.valqueue.put([res[0], finaltl])
+                self.pause = True
+                self.root_sbox_light.config(bg="red")
+                self.inprocess = False
+                print("[-----------------------------]\n")
+    
+    async def start_asynctl(self, boxes:list[list], texts:list[str]):
+        idx = 0
+        start = time.time()
+        async for tled in self.tl.asynctranslate(texts):
+            self.valqueue.put([boxes[idx], tled])
+            idx += 1
+        print("tr time: ", time.time()-start)
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return
