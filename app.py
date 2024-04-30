@@ -38,21 +38,23 @@ class App:
 
         lang_list = ['en', 'ja', 'id']
         self.lang_selected_src = tk.StringVar()
-        self.lang_selected_src.set(lang_list[1])
+        self.lang_selected_src.set(src_lang)
         self.lang_selected_target = tk.StringVar()
-        self.lang_selected_target.set(lang_list[2])
-        language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
-        srclang_lbl = tk.Label(self.root, text="Source Language")
-        targetlang_lbl = tk.Label(self.root, text="Target Language")
-        language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
-        
+        self.lang_selected_target.set(target_lang)
+        # language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
+        # srclang_lbl = tk.Label(self.root, text="Source Language")
+        # targetlang_lbl = tk.Label(self.root, text="Target Language")
+        # language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
+        deletemode_btn = tk.Button(self.root, text="Delete Mode", bd="4", command=self.__deletemode)
 
         self.sb_size = tk.StringVar(self.root, "700x450")
+        self.width_thres = tk.StringVar(self.root, "0.7")
+        self.y_thres = tk.StringVar(self.root, "0.6")
         self.sizeslist = ("400x300", "700x450", "1000x600", "1300x750")
         self.paragraphmode = tk.BooleanVar()
         self.gpumode = tk.BooleanVar()
         self.root_ispgraph = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
-        self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
+        # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
         
         # Queue
         self.valqueue = Queue(5)
@@ -66,7 +68,8 @@ class App:
         self.captured_img = None
 
         # Detrec and translator
-        self.detrec = TextDetectionRecognition([self.lang_selected_src.get()])
+        langchoice = ['en'] if len(src_lang) == 0 or src_lang == 'en' else ['en', self.lang_selected_src.get()]
+        self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
         self.tl = Translator(self.lang_selected_target.get())
 
         # Flags
@@ -79,13 +82,14 @@ class App:
         self.placedlabel: list[tk.Label] = []
         self.labelcount = 0
 
-        self.root_sbox_btn.grid(column=0, row=0, columnspan=2)
-        srclang_lbl.grid(column=0, row=1)
-        targetlang_lbl.grid(column=0, row=2)
-        language_menu_src.grid(column=1, row=1)
-        language_menu_target.grid(column=1, row=2)
+        self.root_sbox_btn.grid(column=0, row=0)
+        # srclang_lbl.grid(column=0, row=1)
+        # targetlang_lbl.grid(column=0, row=2)
+        deletemode_btn.grid(column=1, row=0)
+        # language_menu_src.grid(column=1, row=1)
+        # language_menu_target.grid(column=1, row=2)
         self.root_ispgraph.grid(column=0,row=3)
-        self.root_usegpu.grid(column=0,row=4)
+        # self.root_usegpu.grid(column=0,row=4)
         for x in range(len(self.sizeslist)):
             r = tk.Radiobutton(
                 self.root,
@@ -104,7 +108,6 @@ class App:
         # messagebox.showinfo("Info", "Please wait... (DON'T CLICK ANYTHING)")
         # thread = Thread(target=self.detrec.lang_change, args=([self.lang_selected_src.get()],))
         # thread.start()
-        print("Change Language")
         self.root.destroy()
 
     def __set_screenbox_size(self) -> None:
@@ -124,18 +127,19 @@ class App:
         self.screenbox.title(SCREENBOX_NAME)
         self.machine_light = tk.Button(self.screenbox, bg="red", width=3)
         self.machine_light.config(state="disabled")
-        self.machine_light.pack(anchor="nw")
+        self.machine_light.pack(anchor="ne")
 
         # screenbox.overrideredirect(True)
         self.__set_screenbox_size()
         self.window_centered(self.screenbox,self.sbw,self.sbh)
-        self.screenbox.resizable(False, False)
+        # self.screenbox.resizable(False, False)
         self.screenbox.attributes("-transparentcolor", "white",'-topmost',1)
         self.screenbox.config(bg="white")
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
 
         self.screenbox.bind("d", self.__deletemode)
         self.screenbox.bind("c", lambda event: self.capture_toogle(event))
+        self.screenbox.bind("v", lambda event: self.__destroy_all_text(event))
 
         self.screenbox_open = True
 
@@ -152,7 +156,7 @@ class App:
             try:
                 boxtext = self.valqueue.get()
                 print(boxtext)
-                self.put_text(
+                self.put_text_2(
                     x=boxtext[0][0][0], 
                     y=boxtext[0][0][1],
                     w=boxtext[0][2][0]-boxtext[0][0][0],
@@ -187,8 +191,9 @@ class App:
                 start = time.time()
                 self.detrec.load_image_arr(self.captured_img)
                 res = self.detrec.read(
+                    wths=float(self.width_thres.get()),
                     pmode=self.paragraphmode.get(),
-                    yths=0.6,    
+                    yths=float(self.y_thres.get()),    
                 )
                 print("detrec time: ", time.time() - start)
                 asyncio.run(self.start_asynctl(res[0],res[1]))
@@ -234,6 +239,43 @@ class App:
         self.placedlabel.append(textlabel)
         self.labelcount += 1
 
+    def put_text_2(self, x, y, w, h, text) -> None:
+        # Put a translated text into itw corresponding coordinate
+        # Need extensive customization in tkinter app side
+        # - width
+        # - width ths
+        # - paragraph true / false
+        # etc. try tinkering the documentation
+        fontsize = self.adjust_font_size(text,w,h)
+        
+        canvas = tk.Canvas(self.screenbox)
+        canvas.create_text(0, 0, text=text, fill="black", 
+                             font=('Helvetica', fontsize), 
+                             anchor='nw', width=w)  # Anchor to top-left corner
+        canvas.place(x=x,y=y-10, width=w, height=h)
+
+        # canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
+
+        # self.placedlabel.append(textlabel)
+        # self.labelcount += 1
+    
+    def adjust_font_size(self, text:str, w:int, h:int) -> int:
+        fontsize = ((h - 3) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
+        canvas = tk.Canvas(self.screenbox)
+        while True:
+            textid = canvas.create_text(0, 0, text=text, fill="black", 
+                                font=('Helvetica', fontsize), 
+                                anchor='nw')
+            bbox = canvas.bbox(textid)
+            print("fontsize ", fontsize, ": ", bbox, " -- ", w)
+            if bbox[2]-bbox[0] <= w and bbox[3] - bbox[1] <= h: return fontsize
+            textid = canvas.create_text(0, 0, text=text, font=('Helvetica', fontsize), anchor='nw', width=w)
+            bbox = canvas.bbox(textid)
+
+            if bbox[3] - bbox[1] <= h:
+                return fontsize
+            fontsize -= 4
+
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
         object.destroy()
@@ -261,5 +303,25 @@ class App:
         window.geometry(f"{w}x{h}+{x}+{y}")
 
 if __name__ == '__main__':
-    app = App()
+    app = App(src_lang='en', target_lang='id')
     app.run()
+    # launcher_active = True
+
+    # print("[--TexTranslator--]")
+    # while launcher_active:
+    #     print("Source Language: ", end="")
+    #     srclang = input()
+    #     print("Translated Language: ", end="")
+    #     tledlang = input()
+
+    #     app = App(src_lang=srclang, target_lang=tledlang)
+    #     app.run()  # Activate Tkinter GUI using root.mainloop()
+
+    #     # Check if user wants to quit or restart language selection
+    #     choice = input("Do you want to quit (q) or restart language selection (r)? ")
+    #     if choice.lower() == 'q':
+    #         launcher_active = False  # Exit the loop to quit
+    #     elif choice.lower() == 'r':
+    #         print("Restarting...")
+    #     else:
+    #         print("Invalid choice. Please enter 'q' to quit or 'r' to restart.")

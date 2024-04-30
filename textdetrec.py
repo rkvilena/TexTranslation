@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 
 class TextDetectionRecognition:
-    def __init__(self, language: list[str]) -> None:
-        self.reader     = easyocr.Reader(language, gpu=True)
+    def __init__(self, language: list[str], use_gpu=True) -> None:
+        self.reader     = easyocr.Reader(language, gpu=use_gpu)
         self.image      = None
         self.drawnimg   = None
         self.readresult: tuple[list[list[int,int]],str,float]
