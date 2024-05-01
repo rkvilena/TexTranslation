@@ -5,7 +5,7 @@
 # import tkcap
 import asyncio
 import tkinter as tk
-# import cv2
+import cv2
 import pygetwindow as gw
 import numpy as np
 import time
@@ -13,13 +13,14 @@ from threading import Thread
 from tkinter import messagebox
 from queue import Queue
 from mss import mss
-from PIL import Image
+from PIL import Image, ImageTk, ImageFilter
 from translator import Translator
 from textdetrec import TextDetectionRecognition
 from torch.multiprocessing import Process
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
+TRANSPARENT_COLOR = "#66cdab"
 
 class App:
     def __init__(self, w=400, h=400, src_lang="", target_lang="") -> None:
@@ -34,6 +35,7 @@ class App:
         self.sbw = 500
         self.sbh = 250
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
+        self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
         
 
         lang_list = ['en', 'ja', 'id']
@@ -66,6 +68,8 @@ class App:
         # Screen capture
         self.sct = mss()
         self.captured_img = None
+        self.last_captured = None
+        self.bg_lists: list[tk.PhotoImage] = []
 
         # Detrec and translator
         langchoice = ['en'] if len(src_lang) == 0 or src_lang == 'en' else ['en', self.lang_selected_src.get()]
@@ -79,7 +83,7 @@ class App:
         self.pause = True
         self.inprocess = False
 
-        self.placedlabel: list[tk.Label] = []
+        self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
 
         self.root_sbox_btn.grid(column=0, row=0)
@@ -120,6 +124,9 @@ class App:
         self.sbw = sbw
         self.sbh = sbh
 
+    def keybind_openscreenbox(self, event) -> None:
+        self.__open_screenbox()
+
     def __open_screenbox(self) -> None:
         if self.screenbox_open: return
 
@@ -133,13 +140,13 @@ class App:
         self.__set_screenbox_size()
         self.window_centered(self.screenbox,self.sbw,self.sbh)
         # self.screenbox.resizable(False, False)
-        self.screenbox.attributes("-transparentcolor", "white",'-topmost',1)
-        self.screenbox.config(bg="white")
+        self.screenbox.attributes("-transparentcolor", TRANSPARENT_COLOR,'-topmost',1)
+        self.screenbox.config(bg=TRANSPARENT_COLOR)
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
 
         self.screenbox.bind("d", self.__deletemode)
         self.screenbox.bind("c", lambda event: self.capture_toogle(event))
-        self.screenbox.bind("v", lambda event: self.__destroy_all_text(event))
+        self.screenbox.bind("v", lambda event: self.keybind_destroyalltext(event))
 
         self.screenbox_open = True
 
@@ -175,7 +182,8 @@ class App:
             sct_img = self.sct.grab(mon)
             img = Image.frombytes('RGB', (sct_img.size.width, sct_img.size.height), sct_img.rgb)
 
-            self.captured_img = np.array(img)
+            self.captured_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            self.last_captured = self.captured_img.copy()
             self.inprocess = True
 
             # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
@@ -216,28 +224,12 @@ class App:
         if not self.screenbox_open: return
         if self.mode_deletemode:
             self.mode_deletemode = False
-            self.screenbox.config(bg="white")
+            self.screenbox.config(bg=TRANSPARENT_COLOR)
             self.screenbox.attributes('-alpha', 1)
         else:
             self.mode_deletemode = True
             self.screenbox.config(bg="gray")
             self.screenbox.attributes('-alpha', 0.4)
-
-    def put_text(self, x, y, w, h, text) -> None:
-        # Put a translated text into itw corresponding coordinate
-        # Need extensive customization in tkinter app side
-        # - width
-        # - width ths
-        # - paragraph true / false
-        # etc. try tinkering the documentation
-        
-        # fontsize = ((h - 6) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
-        textlabel = tk.Label(self.screenbox, text=text, width=w+120, wraplength=w, justify="left")
-        textlabel.place(x=x,y=y-10, width=w+10, height=h)
-        textlabel.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
-
-        self.placedlabel.append(textlabel)
-        self.labelcount += 1
 
     def put_text_2(self, x, y, w, h, text) -> None:
         # Put a translated text into itw corresponding coordinate
@@ -246,35 +238,55 @@ class App:
         # - width ths
         # - paragraph true / false
         # etc. try tinkering the documentation
-        fontsize = self.adjust_font_size(text,w,h)
-        
-        canvas = tk.Canvas(self.screenbox)
-        canvas.create_text(0, 0, text=text, fill="black", 
+        fontsize = self.__adjust_font_size(text,w,h)
+        canvas = tk.Canvas(self.screenbox, width=w, height=h, highlightthickness=0)
+        cropped = self.last_captured[y:y+h, x:x+w]
+        converted = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+        ksize = (11,11)
+        converted = cv2.blur(
+            cv2.medianBlur(
+                converted, 13, cv2.BORDER_REPLICATE
+            ), ksize, cv2.BORDER_REPLICATE
+        )
+        bg = ImageTk.PhotoImage(
+            image=Image.fromarray(converted)
+        )
+        self.bg_lists.append(bg)
+
+        canvas.create_image(0, 0, image = bg, anchor = "nw")
+        canvas.create_text(0, 0, text=text, fill=self.__det_textcolor(converted), 
                              font=('Helvetica', fontsize), 
-                             anchor='nw', width=w)  # Anchor to top-left corner
+                             anchor='nw', width=w)
         canvas.place(x=x,y=y-10, width=w, height=h)
+        canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
-        # canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, textlabel))
+        self.placedlabel.append(canvas)
+        self.labelcount += 1
 
-        # self.placedlabel.append(textlabel)
-        # self.labelcount += 1
+    def __det_textcolor(self, img):
+        avglum = int(cv2.mean(
+            cv2.cvtColor(img, cv2.COLOR_BGR2HSV)[:,:,2]
+        )[0])
+        return "#ffffff" if avglum <= 128 else "#000000"
     
-    def adjust_font_size(self, text:str, w:int, h:int) -> int:
-        fontsize = ((h - 3) * (self.screenbox.winfo_height() + 8)) // self.dscreen_h
+    def __adjust_font_size(self, text:str, w:int, h:int) -> int:
+        fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
+        if fontsize < 10 : fontsize = 15
+        elif fontsize > 100 : fontsize = 100
         canvas = tk.Canvas(self.screenbox)
         while True:
             textid = canvas.create_text(0, 0, text=text, fill="black", 
                                 font=('Helvetica', fontsize), 
                                 anchor='nw')
             bbox = canvas.bbox(textid)
-            print("fontsize ", fontsize, ": ", bbox, " -- ", w)
+            # print("fontsize ", fontsize, ": ", bbox, " -- ", w)
             if bbox[2]-bbox[0] <= w and bbox[3] - bbox[1] <= h: return fontsize
             textid = canvas.create_text(0, 0, text=text, font=('Helvetica', fontsize), anchor='nw', width=w)
             bbox = canvas.bbox(textid)
 
-            if bbox[3] - bbox[1] <= h:
-                return fontsize
-            fontsize -= 4
+            if bbox[3] - bbox[1] <= h: return fontsize
+            if fontsize > 33: fontsize -= 10
+            else: fontsize -= 3
 
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
@@ -285,6 +297,9 @@ class App:
         if self.labelcount != 0: self.placedlabel = [l.destroy() for l in self.placedlabel]
         self.placedlabel = []
         self.labelcount = 0
+    
+    def keybind_destroyalltext(self, event) -> None:
+        self.__destroy_all_text()
 
     def __close_screenbox(self) -> None:
         self.screenbox_open = False
@@ -303,7 +318,7 @@ class App:
         window.geometry(f"{w}x{h}+{x}+{y}")
 
 if __name__ == '__main__':
-    app = App(src_lang='en', target_lang='id')
+    app = App(src_lang='ja', target_lang='id')
     app.run()
     # launcher_active = True
 
