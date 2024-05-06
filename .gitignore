@@ -7,3 +7,4 @@ east_icdar2015_resnet_v1_50_rbox.zip
 *.tgz
 *.jpg
 *.png
+trkey.json
