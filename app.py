@@ -60,7 +60,7 @@ class App:
         # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
         
         # Queue
-        self.valqueue = Queue(1)
+        self.valqueue = Queue()
 
         # Thread
         self.thread = Thread(target=self.detect_recognize_translate)
@@ -180,7 +180,7 @@ class App:
         if not self.valqueue.empty() and self.inprocess:
             try:
                 boxtext = self.valqueue.get()
-                print(boxtext)
+                start = time.time()
                 for x in range(len(boxtext[0])):
                     self.put_text_2(
                         x=int(boxtext[0][x][0][0]), 
@@ -189,6 +189,14 @@ class App:
                         h=int(boxtext[0][x][2][1]-boxtext[0][x][0][1]),
                         text=boxtext[1][x]
                     )
+                print("Label placing time: ", time.time()-start)
+                # self.put_text_2(
+                #     x=int(boxtext[0][0][0]), 
+                #     y=int(boxtext[0][0][1]),
+                #     w=int(boxtext[0][2][0]-boxtext[0][0][0]),
+                #     h=int(boxtext[0][2][1]-boxtext[0][0][1]),
+                #     text=boxtext[1]
+                # )
             except Exception as e:
                 print("[error] ", e, "\n")
 
@@ -224,31 +232,34 @@ class App:
                 )
                 print("detrec time: ", time.time() - start)
                 # asyncio.run(self.start_asynctl(res[0],res[1]))
-                self.valqueue.put([res[0],self.tl.translate(res[1])])
+                translated = self.__easynmt_translate(texts=res[1])
+                # translated = self.tl.translate(res[1])
+                
+                self.valqueue.put([res[0],translated])
+
                 self.textcount = len(res[0])
                 self.captured_img = None
+                self.tl.show_tr_duration()
                 print("[-----------------------------]\n")
     
     async def start_asynctl(self, boxes:list[list], texts:list[str]):
-        idx = 0
-        # async for tled in self.tl.asynctranslate(texts):
-        #     self.valqueue.put([boxes[idx], tled])
-        #     idx += 1
+        url = "https://c307-34-143-249-81.ngrok-free.app/"
         start = time.time()
-        response = requests.post("https://32ac-104-198-211-190.ngrok-free.app",
+        response = requests.post(url,
                 json={'target_lang': self.lang_selected_target.get(), 'text': texts})
         print(time.time()-start)
+        idx = 0
         for tled in response.json():
-                self.valqueue.put([boxes[idx], tled])
-                idx += 1
+            self.valqueue.put([boxes[idx], tled])
+            idx += 1
 
-    # async def easynmt_translate(self, texts:list[str]) -> list[str]:
-    #     start = time.time()
-    #     r = await requests.post("https://82f1-34-143-180-13.ngrok-free.app/",
-    #             json={'target_lang': self.lang_selected_target.get(), 'text': texts})
-    #     print(time.time()-start)
-    #     print(r.json())
-    #     return r.json()
+    def __easynmt_translate(self, texts:list[str]):
+        url = "https://c307-34-143-249-81.ngrok-free.app/"
+        start = time.time()
+        response = requests.post(url,
+                json={'target_lang': self.lang_selected_target.get(), 'text': texts})
+        print(time.time()-start)
+        return response.json()
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return
@@ -268,7 +279,7 @@ class App:
         # - width ths
         # - paragraph true / false
         # etc. try tinkering the documentation
-        start = time.time()
+
         fontsize = self.__adjust_font_size(text,w,h)
         canvas = tk.Canvas(self.screenbox, width=w, height=h, highlightthickness=0)
         cropped = self.last_captured[y:y+h, x:x+w]
@@ -293,7 +304,6 @@ class App:
 
         self.placedlabel.append(canvas)
         self.labelcount += 1
-        print("Label draw delay time: ", time.time()-start)
         if self.labelcount == self.textcount: self.closing_cycle()
 
     def closing_cycle(self):
@@ -310,21 +320,17 @@ class App:
     def __adjust_font_size(self, text:str, w:int, h:int) -> int:
         fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
         if fontsize < 10 : fontsize = 15
-        elif fontsize > 100 : fontsize = 100
-        canvas = tk.Canvas(self.screenbox)
+        elif fontsize > 70 : fontsize = 50
+        canvas = tk.Canvas()
         while True:
-            textid = canvas.create_text(0, 0, text=text, fill="black", 
-                                font=('Helvetica', fontsize), 
-                                anchor='nw')
-            bbox = canvas.bbox(textid)
-            # print("fontsize ", fontsize, ": ", bbox, " -- ", w)
-            if bbox[2]-bbox[0] <= w and bbox[3] - bbox[1] <= h: return fontsize
-            textid = canvas.create_text(0, 0, text=text, font=('Helvetica', fontsize), anchor='nw', width=w)
+            textid = canvas.create_text(0, 0, text=text, 
+                                font=('Helvetica', fontsize),
+                                anchor='nw', width=w)
             bbox = canvas.bbox(textid)
 
             if bbox[3] - bbox[1] <= h: return fontsize
-            if fontsize > 33: fontsize -= 10
-            else: fontsize -= 3
+            if fontsize > 25: fontsize -= 10
+            else: fontsize -= 2
 
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
@@ -357,7 +363,7 @@ class App:
 
 if __name__ == '__main__':
     app = App(
-        src_lang='ru', 
+        src_lang='ja', 
         target_lang='id', 
         translator="Google"
     )
