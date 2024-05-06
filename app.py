@@ -9,12 +9,14 @@ import cv2
 import pygetwindow as gw
 import numpy as np
 import time
+import torch
+import requests
 from threading import Thread
 from tkinter import messagebox
 from queue import Queue
 from mss import mss
 from PIL import Image, ImageTk, ImageFilter
-from translator import Translator
+from translator import EasyNMTranslator, GoogleTranslator
 from textdetrec import TextDetectionRecognition
 from torch.multiprocessing import Process
 
@@ -23,7 +25,7 @@ SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
 class App:
-    def __init__(self, w=400, h=400, src_lang="", target_lang="") -> None:
+    def __init__(self, w=400, h=400, src_lang="", target_lang="", translator="Google") -> None:
         # Root
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -36,7 +38,6 @@ class App:
         self.sbh = 250
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
         self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
-        
 
         lang_list = ['en', 'ja', 'id']
         self.lang_selected_src = tk.StringVar()
@@ -59,7 +60,7 @@ class App:
         # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
         
         # Queue
-        self.valqueue = Queue(5)
+        self.valqueue = Queue(1)
 
         # Thread
         self.thread = Thread(target=self.detect_recognize_translate)
@@ -73,8 +74,23 @@ class App:
 
         # Detrec and translator
         langchoice = ['en'] if len(src_lang) == 0 or src_lang == 'en' else ['en', self.lang_selected_src.get()]
+        print("Loading Detection & Recognition model EasyOCR...")
         self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
-        self.tl = Translator(self.lang_selected_target.get())
+
+        if translator == "EasyNMT":
+            print("Loading Translation model EasyNMT...")
+            self.tl = EasyNMTranslator(
+                self.lang_selected_src.get(),
+                self.lang_selected_target.get()
+            )
+        elif translator == "Google":
+            print("Loading Translation model GoogleTranslator...")
+            self.tl = GoogleTranslator(
+                self.lang_selected_src.get(),
+                self.lang_selected_target.get()
+            )
+        print("Models loading completed!")
+        print("Starting TexTranslator App...")
 
         # Flags
         self.mode_deletemode = False
@@ -82,6 +98,7 @@ class App:
         self.capturemode = False
         self.pause = True
         self.inprocess = False
+        self.starttime = 0
 
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
@@ -151,6 +168,7 @@ class App:
         self.screenbox_open = True
 
         self.capture_screen_mss()
+        self.starttime = time.time()
         self.screenbox.mainloop()
 
     def capture_toogle(self, event=None) -> None:
@@ -159,17 +177,18 @@ class App:
         self.machine_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
-        if not self.valqueue.empty():
+        if not self.valqueue.empty() and self.inprocess:
             try:
                 boxtext = self.valqueue.get()
                 print(boxtext)
-                self.put_text_2(
-                    x=boxtext[0][0][0], 
-                    y=boxtext[0][0][1],
-                    w=boxtext[0][2][0]-boxtext[0][0][0],
-                    h=boxtext[0][2][1]-boxtext[0][0][1],
-                    text=boxtext[1]
-                )
+                for x in range(len(boxtext[0])):
+                    self.put_text_2(
+                        x=int(boxtext[0][x][0][0]), 
+                        y=int(boxtext[0][x][0][1]),
+                        w=int(boxtext[0][x][2][0]-boxtext[0][x][0][0]),
+                        h=int(boxtext[0][x][2][1]-boxtext[0][x][0][1]),
+                        text=boxtext[1][x]
+                    )
             except Exception as e:
                 print("[error] ", e, "\n")
 
@@ -189,7 +208,7 @@ class App:
             # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
             # cv2.imshow('windowframe', np.array(img_bgr))
             
-        self.screenbox.after(500, self.capture_screen_mss)
+        self.screenbox.after(100, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
         while True:
@@ -204,21 +223,32 @@ class App:
                     yths=float(self.y_thres.get()),    
                 )
                 print("detrec time: ", time.time() - start)
-                asyncio.run(self.start_asynctl(res[0],res[1]))
-
+                # asyncio.run(self.start_asynctl(res[0],res[1]))
+                self.valqueue.put([res[0],self.tl.translate(res[1])])
+                self.textcount = len(res[0])
                 self.captured_img = None
-                self.pause = True
-                self.machine_light.config(bg="red")
-                self.inprocess = False
                 print("[-----------------------------]\n")
     
     async def start_asynctl(self, boxes:list[list], texts:list[str]):
         idx = 0
+        # async for tled in self.tl.asynctranslate(texts):
+        #     self.valqueue.put([boxes[idx], tled])
+        #     idx += 1
         start = time.time()
-        async for tled in self.tl.asynctranslate(texts):
-            self.valqueue.put([boxes[idx], tled])
-            idx += 1
-        print("tr time: ", time.time()-start)
+        response = requests.post("https://32ac-104-198-211-190.ngrok-free.app",
+                json={'target_lang': self.lang_selected_target.get(), 'text': texts})
+        print(time.time()-start)
+        for tled in response.json():
+                self.valqueue.put([boxes[idx], tled])
+                idx += 1
+
+    # async def easynmt_translate(self, texts:list[str]) -> list[str]:
+    #     start = time.time()
+    #     r = await requests.post("https://82f1-34-143-180-13.ngrok-free.app/",
+    #             json={'target_lang': self.lang_selected_target.get(), 'text': texts})
+    #     print(time.time()-start)
+    #     print(r.json())
+    #     return r.json()
 
     def __deletemode(self, event=None) -> None:
         if not self.screenbox_open: return
@@ -238,6 +268,7 @@ class App:
         # - width ths
         # - paragraph true / false
         # etc. try tinkering the documentation
+        start = time.time()
         fontsize = self.__adjust_font_size(text,w,h)
         canvas = tk.Canvas(self.screenbox, width=w, height=h, highlightthickness=0)
         cropped = self.last_captured[y:y+h, x:x+w]
@@ -262,6 +293,13 @@ class App:
 
         self.placedlabel.append(canvas)
         self.labelcount += 1
+        print("Label draw delay time: ", time.time()-start)
+        if self.labelcount == self.textcount: self.closing_cycle()
+
+    def closing_cycle(self):
+        self.pause = True
+        self.machine_light.config(bg="red")
+        self.inprocess = False
 
     def __det_textcolor(self, img):
         avglum = int(cv2.mean(
@@ -318,9 +356,14 @@ class App:
         window.geometry(f"{w}x{h}+{x}+{y}")
 
 if __name__ == '__main__':
-    app = App(src_lang='ja', target_lang='id')
+    app = App(
+        src_lang='ru', 
+        target_lang='id', 
+        translator="Google"
+    )
     app.run()
     # launcher_active = True
+    
 
     # print("[--TexTranslator--]")
     # while launcher_active:
