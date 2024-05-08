@@ -102,6 +102,9 @@ class App:
 
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
+        self.fontdict = [0 for _ in range(90)]
+        self.fontsize_init()
+        print(self.fontdict)
 
         self.root_sbox_btn.grid(column=0, row=0)
         # srclang_lbl.grid(column=0, row=1)
@@ -123,6 +126,18 @@ class App:
     def run(self) -> None:
         self.thread.start()
         self.root.mainloop()
+    
+    def fontsize_init(self) -> None:
+        cn = tk.Canvas(self.root)
+        limit = 0
+        for x in range (8,51):
+            textid = cn.create_text(0,0,text="Tl",font=('Bahnschrift', x))
+            box = cn.bbox(textid)
+            i = box[3]-box[1]
+            while i >= limit:
+                self.fontdict[i] = x
+                i -= 1
+            limit = box[3]-box[1]
     
     def onchange_srclang(self, *args) -> str:
         # Code still not supported multi language
@@ -180,6 +195,7 @@ class App:
         if not self.valqueue.empty() and self.inprocess:
             try:
                 boxtext = self.valqueue.get()
+                print(boxtext[1])
                 start = time.time()
                 for x in range(len(boxtext[0])):
                     self.put_text_2(
@@ -232,8 +248,9 @@ class App:
                 )
                 print("detrec time: ", time.time() - start)
                 # asyncio.run(self.start_asynctl(res[0],res[1]))
-                translated = self.__easynmt_translate(texts=res[1])
+                # translated = self.__easynmt_translate(texts=res[1])
                 # translated = self.tl.translate(res[1])
+                translated = res[1]
                 
                 self.valqueue.put([res[0],translated])
 
@@ -254,7 +271,7 @@ class App:
             idx += 1
 
     def __easynmt_translate(self, texts:list[str]):
-        url = "https://c307-34-143-249-81.ngrok-free.app/"
+        url = "https://4bff-34-125-31-126.ngrok-free.app/"
         start = time.time()
         response = requests.post(url,
                 json={'target_lang': self.lang_selected_target.get(), 'text': texts})
@@ -273,15 +290,11 @@ class App:
             self.screenbox.attributes('-alpha', 0.4)
 
     def put_text_2(self, x, y, w, h, text) -> None:
-        # Put a translated text into itw corresponding coordinate
-        # Need extensive customization in tkinter app side
-        # - width
-        # - width ths
-        # - paragraph true / false
-        # etc. try tinkering the documentation
-
+        # determine fontsize
         fontsize = self.__adjust_font_size(text,w,h)
         canvas = tk.Canvas(self.screenbox, width=w, height=h, highlightthickness=0)
+        
+        # crop an image and manipulate it as background
         cropped = self.last_captured[y:y+h, x:x+w]
         converted = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
         ksize = (11,11)
@@ -290,20 +303,35 @@ class App:
                 converted, 13, cv2.BORDER_REPLICATE
             ), ksize, cv2.BORDER_REPLICATE
         )
+        # mask = np.zeros_like(cropped[:, :, 0])  # Create mask with same shape as first channel
+        # mask[y:y+h, x:x+w] = 255  # Fill mask with white pixels for text region
+
+        # # Apply inpainting with Telea algorithm
+        # inpainter = cv2.ximgproc.createTeleaInpainting()
+        # inpainter.setInpaintRadius(3)  # Adjust radius as needed
+        # converted = inpainter.inpaint(cropped, mask, 3)
+
+        # create an ImageTk for displayinh
         bg = ImageTk.PhotoImage(
             image=Image.fromarray(converted)
         )
         self.bg_lists.append(bg)
 
+        # draw text to canvas
         canvas.create_image(0, 0, image = bg, anchor = "nw")
-        canvas.create_text(0, 0, text=text, fill=self.__det_textcolor(converted), 
-                             font=('Helvetica', fontsize), 
-                             anchor='nw', width=w)
+        textid = canvas.create_text(0, 0, text=text, fill=self.__det_textcolor(converted), 
+                             font=('Bahnschrift', fontsize), 
+                             anchor='nw')
+        if self.paragraphmode: canvas.itemconfig(textid, width=w)
         canvas.place(x=x,y=y-10, width=w, height=h)
         canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
+        # placed text calculation
         self.placedlabel.append(canvas)
         self.labelcount += 1
+        canvas.update_idletasks()
+
+        # check if all texts has been placed
         if self.labelcount == self.textcount: self.closing_cycle()
 
     def closing_cycle(self):
@@ -318,14 +346,15 @@ class App:
         return "#ffffff" if avglum <= 128 else "#000000"
     
     def __adjust_font_size(self, text:str, w:int, h:int) -> int:
+        if not self.paragraphmode.get(): return self.fontdict[h]-3
         fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
         if fontsize < 10 : fontsize = 15
         elif fontsize > 70 : fontsize = 50
         canvas = tk.Canvas()
+        textid = canvas.create_text(0, 0, text=text, anchor='nw', width=w)
+        
         while True:
-            textid = canvas.create_text(0, 0, text=text, 
-                                font=('Helvetica', fontsize),
-                                anchor='nw', width=w)
+            canvas.itemconfig(textid, font=('Bahnschrift', fontsize))
             bbox = canvas.bbox(textid)
 
             if bbox[3] - bbox[1] <= h: return fontsize

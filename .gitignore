@@ -2,6 +2,7 @@ __pycache__/
 model/
 SavedModel/
 tests/
+codepark/
 CRNN.tf2/
 east_icdar2015_resnet_v1_50_rbox.zip
 *.tgz
