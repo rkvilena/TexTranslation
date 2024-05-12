@@ -8,6 +8,7 @@ class TextDetectionRecognition:
         self.image      = None
         self.drawnimg   = None
         self.readresult: tuple[list[list[int,int]],str,float]
+        self.detrectime = 0.0
 
     def load_image_file(self, imagepath):
         self.image = cv2.imread(imagepath)
@@ -22,6 +23,7 @@ class TextDetectionRecognition:
         print("Change language completed!")
 
     def read(self, wths = 0.7, pmode = False, yths = 0.5):
+        self.detrectime = time.time()
         self.grayscale_image()
         self.readresult = self.reader.readtext(
             self.image,
@@ -33,7 +35,6 @@ class TextDetectionRecognition:
 
     def grayscale_image(self):
         self.image = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-        # _, self.image = cv2.threshold(self.image, 127, 255, cv2.THRESH_BINARY)
     
     def save_drawn_img(self):
         cv2.imwrite("detection_res3.jpg", self.drawnimg)
@@ -41,6 +42,7 @@ class TextDetectionRecognition:
     def get_result(self):
         boxes = [item[0] for item in self.readresult]
         texts = [item[1] for item in self.readresult]
+        self.detrectime = time.time()-self.detrectime
         return [boxes, texts]
 
     def show_detrec_duration(self):

@@ -24,8 +24,15 @@ APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
-class App:
+class TexTranslator:
     def __init__(self, w=400, h=400, src_lang="", target_lang="", translator="Google") -> None:
+        self.define_widgets(src_lang, target_lang, w=400, h=400)      # Tkinter widget init
+        self.define_components(src_lang, translator)    # Queue, Thread, Screen capture, EasyOCR, Tl init
+        self.define_flags()                             # Flags init
+        self.set_label_config()                         # Label-related setup
+        self.apply_widget()                             # Put every widget in grid
+
+    def define_widgets(self, srclang:str, targetlang:str, w=400, h=400) -> None:
         # Root
         self.root = tk.Tk()
         self.root.title(APP_NAME)
@@ -39,16 +46,16 @@ class App:
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
         self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
 
-        lang_list = ['en', 'ja', 'id']
+        self.lang_list = ['en', 'ja', 'id']
         self.lang_selected_src = tk.StringVar()
-        self.lang_selected_src.set(src_lang)
+        self.lang_selected_src.set(srclang)
         self.lang_selected_target = tk.StringVar()
-        self.lang_selected_target.set(target_lang)
-        language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.set_language_flag)
-        srclang_lbl = tk.Label(self.root, text="Source Language")
-        targetlang_lbl = tk.Label(self.root, text="Target Language")
-        language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
-        deletemode_btn = tk.Button(self.root, text="Delete Mode", bd="4", command=self.__deletemode)
+        self.lang_selected_target.set(targetlang)
+        self.language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *self.lang_list, command = self.set_language_flag)
+        self.srclang_lbl = tk.Label(self.root, text="Source Language")
+        self.targetlang_lbl = tk.Label(self.root, text="Target Language")
+        self.language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *self.lang_list)
+        self.deletemode_btn = tk.Button(self.root, text="Delete Mode", bd="4", command=self.__deletemode)
 
         self.sb_size = tk.StringVar(self.root, "700x450")
         self.width_thres = tk.StringVar(self.root, "0.7")
@@ -61,7 +68,8 @@ class App:
 
         self.changelang_light = tk.Button(self.root, bg="black", width=3)
         self.changelang_light.config(state="disabled")
-        
+
+    def define_components(self, srclang:str, tl:str) -> None:
         # Queue
         self.valqueue = Queue()
 
@@ -76,17 +84,17 @@ class App:
         self.bg_lists: list[tk.PhotoImage] = []
 
         # Detrec and translator
-        langchoice = ['en'] if len(src_lang) == 0 or src_lang == 'en' else ['en', self.lang_selected_src.get()]
+        langchoice = ['en'] if len(srclang) == 0 or srclang == 'en' else ['en', self.lang_selected_src.get()]
         print("Loading Detection & Recognition model EasyOCR...")
-        # self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
+        self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
 
-        if translator == "EasyNMT":
+        if tl == "EasyNMT":
             print("Loading Translation model EasyNMT...")
             self.tl = EasyNMTranslator(
                 self.lang_selected_src.get(),
                 self.lang_selected_target.get()
             )
-        elif translator == "Google":
+        elif tl == "Google":
             print("Loading Translation model GoogleTranslator...")
             self.tl = GoogleTranslator(
                 self.lang_selected_src.get(),
@@ -94,7 +102,8 @@ class App:
             )
         print("Models loading completed!")
         print("Starting TexTranslator App...")
-
+    
+    def define_flags(self) -> None:
         # Flags
         self.mode_deletemode = False
         self.screenbox_open = False
@@ -103,18 +112,20 @@ class App:
         self.inprocess = False
         self.starttime = 0
         self.onchangelang = False
-
+    
+    def set_label_config(self) -> None:
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
         self.fontdict = [0 for _ in range(90)]
         self.fontsize_init()
-
+    
+    def apply_widget(self) -> None:
         self.root_sbox_btn.grid(column=0, row=0)
-        srclang_lbl.grid(column=0, row=1)
-        targetlang_lbl.grid(column=0, row=2)
-        deletemode_btn.grid(column=1, row=0)
-        language_menu_src.grid(column=1, row=1)
-        language_menu_target.grid(column=1, row=2)
+        self.srclang_lbl.grid(column=0, row=1)
+        self.targetlang_lbl.grid(column=0, row=2)
+        self.deletemode_btn.grid(column=1, row=0)
+        self.language_menu_src.grid(column=1, row=1)
+        self.language_menu_target.grid(column=1, row=2)
         self.root_ispgraph.grid(column=0,row=3)
         # self.root_usegpu.grid(column=0,row=4)
         self.changelang_light.grid(column=2, row=1)
@@ -193,9 +204,6 @@ class App:
 
         self.screenbox_open = True
 
-        self.border_r = tk.Canvas(self.screenbox, width=1, height=self.dscreen_h)
-        self.border_r.pack(anchor='e')
-
         self.capture_screen_mss()
         self.starttime = time.time()
         self.screenbox.mainloop()
@@ -210,13 +218,13 @@ class App:
             try:
                 boxtext = self.valqueue.get()
                 start = time.time()
-                for x in range(len(boxtext[0])):
+                for i in range(len(boxtext[0])):
                     self.put_text_2(
-                        x=int(boxtext[0][x][0][0]), 
-                        y=int(boxtext[0][x][0][1]),
-                        w=int(boxtext[0][x][2][0]-boxtext[0][x][0][0]),
-                        h=int(boxtext[0][x][2][1]-boxtext[0][x][0][1]),
-                        text=boxtext[1][x]
+                        h=boxtext[0][i][0],
+                        w=boxtext[0][i][1],
+                        x=boxtext[0][i][2],
+                        y=boxtext[0][i][3],
+                        text=boxtext[1][i]
                     )
                 print("Label placing time: ", time.time()-start)
             except Exception as e:
@@ -235,10 +243,6 @@ class App:
             self.captured_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.last_captured = self.captured_img.copy()
             self.inprocess = True
-
-            # img_bgr = cv2.cvtColor(self.captured_img, cv2.COLOR_RGB2BGR)
-            # cv2.imshow('windowframe', np.array(img_bgr))
-            
         self.screenbox.after(100, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
@@ -246,22 +250,32 @@ class App:
             if self.captured_img is not None:
                 print("[Thread] OCR Process started")
                 print("[-----------------------------]")
-                start = time.time()
+
+                # Detection & recognition section
                 self.detrec.load_image_arr(self.captured_img)
                 res = self.detrec.read(
                     wths=float(self.width_thres.get()),
                     pmode=self.paragraphmode.get(),
                     yths=float(self.y_thres.get()),    
                 )
-                print("detrec time: ", time.time() - start)
                 print(res)
+
+                # # Text Translate section
                 # asyncio.run(self.start_asynctl(res[0],res[1]))
                 # translated = self.__easynmt_translate(texts=res[1])
                 # translated = self.tl.translate(res[1])
                 translated = res[1]
-                
-                self.valqueue.put([res[0],translated])
 
+                # Bounding-box parsing to (h, w, x, y)
+                finalboxes = []
+                for i in range(len(res[0])):
+                    h = int(res[0][i][2][1]-res[0][i][0][1])
+                    w = int(res[0][i][2][0]-res[0][i][0][0])
+                    x = int(res[0][i][0][0])
+                    y = int(res[0][i][0][1])
+                    finalboxes.append([h,w,x,y])
+                
+                self.valqueue.put([finalboxes,translated])
                 self.textcount = len(res[0])
                 self.captured_img = None
                 self.tl.show_tr_duration()
@@ -311,13 +325,6 @@ class App:
                 converted, 13, cv2.BORDER_REPLICATE
             ), ksize, cv2.BORDER_REPLICATE
         )
-        # mask = np.zeros_like(cropped[:, :, 0])  # Create mask with same shape as first channel
-        # mask[y:y+h, x:x+w] = 255  # Fill mask with white pixels for text region
-
-        # # Apply inpainting with Telea algorithm
-        # inpainter = cv2.ximgproc.createTeleaInpainting()
-        # inpainter.setInpaintRadius(3)  # Adjust radius as needed
-        # converted = inpainter.inpaint(cropped, mask, 3)
 
         # create an ImageTk for displayinh
         bg = ImageTk.PhotoImage(
@@ -399,30 +406,9 @@ class App:
         window.geometry(f"{w}x{h}+{x}+{y}")
 
 if __name__ == '__main__':
-    app = App(
+    app = TexTranslator(
         src_lang='en', 
         target_lang='id', 
         translator="Google"
     )
     app.run()
-    # launcher_active = True
-    
-
-    # print("[--TexTranslator--]")
-    # while launcher_active:
-    #     print("Source Language: ", end="")
-    #     srclang = input()
-    #     print("Translated Language: ", end="")
-    #     tledlang = input()
-
-    #     app = App(src_lang=srclang, target_lang=tledlang)
-    #     app.run()  # Activate Tkinter GUI using root.mainloop()
-
-    #     # Check if user wants to quit or restart language selection
-    #     choice = input("Do you want to quit (q) or restart language selection (r)? ")
-    #     if choice.lower() == 'q':
-    #         launcher_active = False  # Exit the loop to quit
-    #     elif choice.lower() == 'r':
-    #         print("Restarting...")
-    #     else:
-    #         print("Invalid choice. Please enter 'q' to quit or 'r' to restart.")
