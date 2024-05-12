@@ -44,10 +44,10 @@ class App:
         self.lang_selected_src.set(src_lang)
         self.lang_selected_target = tk.StringVar()
         self.lang_selected_target.set(target_lang)
-        # language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.onchange_srclang)
-        # srclang_lbl = tk.Label(self.root, text="Source Language")
-        # targetlang_lbl = tk.Label(self.root, text="Target Language")
-        # language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
+        language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *lang_list, command = self.set_language_flag)
+        srclang_lbl = tk.Label(self.root, text="Source Language")
+        targetlang_lbl = tk.Label(self.root, text="Target Language")
+        language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *lang_list)
         deletemode_btn = tk.Button(self.root, text="Delete Mode", bd="4", command=self.__deletemode)
 
         self.sb_size = tk.StringVar(self.root, "700x450")
@@ -58,13 +58,16 @@ class App:
         self.gpumode = tk.BooleanVar()
         self.root_ispgraph = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
         # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
+
+        self.changelang_light = tk.Button(self.root, bg="black", width=3)
+        self.changelang_light.config(state="disabled")
         
         # Queue
         self.valqueue = Queue()
 
         # Thread
-        self.thread = Thread(target=self.detect_recognize_translate)
-        self.thread.daemon = True
+        self.detrecthread = Thread(target=self.detect_recognize_translate)
+        self.detrecthread.daemon = True
 
         # Screen capture
         self.sct = mss()
@@ -75,7 +78,7 @@ class App:
         # Detrec and translator
         langchoice = ['en'] if len(src_lang) == 0 or src_lang == 'en' else ['en', self.lang_selected_src.get()]
         print("Loading Detection & Recognition model EasyOCR...")
-        self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
+        # self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
 
         if translator == "EasyNMT":
             print("Loading Translation model EasyNMT...")
@@ -99,21 +102,22 @@ class App:
         self.pause = True
         self.inprocess = False
         self.starttime = 0
+        self.onchangelang = False
 
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
         self.fontdict = [0 for _ in range(90)]
         self.fontsize_init()
-        print(self.fontdict)
 
         self.root_sbox_btn.grid(column=0, row=0)
-        # srclang_lbl.grid(column=0, row=1)
-        # targetlang_lbl.grid(column=0, row=2)
+        srclang_lbl.grid(column=0, row=1)
+        targetlang_lbl.grid(column=0, row=2)
         deletemode_btn.grid(column=1, row=0)
-        # language_menu_src.grid(column=1, row=1)
-        # language_menu_target.grid(column=1, row=2)
+        language_menu_src.grid(column=1, row=1)
+        language_menu_target.grid(column=1, row=2)
         self.root_ispgraph.grid(column=0,row=3)
         # self.root_usegpu.grid(column=0,row=4)
+        self.changelang_light.grid(column=2, row=1)
         for x in range(len(self.sizeslist)):
             r = tk.Radiobutton(
                 self.root,
@@ -124,7 +128,7 @@ class App:
             r.grid(column=1, row=3+x)
     
     def run(self) -> None:
-        self.thread.start()
+        self.detrecthread.start()
         self.root.mainloop()
     
     def fontsize_init(self) -> None:
@@ -138,13 +142,20 @@ class App:
                 self.fontdict[i] = x
                 i -= 1
             limit = box[3]-box[1]
+
+    def set_language_flag(self, event=None):
+        self.onchangelang = True
+        self.changelang_light.config(bg="blue")
+        self.change_srclang()
     
-    def onchange_srclang(self, *args) -> str:
-        # Code still not supported multi language
-        # messagebox.showinfo("Info", "Please wait... (DON'T CLICK ANYTHING)")
-        # thread = Thread(target=self.detrec.lang_change, args=([self.lang_selected_src.get()],))
-        # thread.start()
-        self.root.destroy()
+    def change_srclang(self):
+        if self.onchangelang:
+            print("Change Language...")
+            messagebox.showinfo("Info", "Please keep away from clicking anything on this app until the next notification. Click 'OK' to start change language.")
+            self.detrec.lang_change(self.lang_selected_src.get())
+            self.onchangelang = False
+            messagebox.showinfo("Info", "Change language completed!")
+            self.changelang_light.config(bg="black")
 
     def __set_screenbox_size(self) -> None:
         sbw: int
@@ -164,7 +175,7 @@ class App:
 
         self.screenbox = tk.Toplevel(self.root)
         self.screenbox.title(SCREENBOX_NAME)
-        self.machine_light = tk.Button(self.screenbox, bg="red", width=3)
+        self.machine_light = tk.Button(self.screenbox, bg="green", width=3)
         self.machine_light.config(state="disabled")
         self.machine_light.pack(anchor="ne")
 
@@ -182,20 +193,22 @@ class App:
 
         self.screenbox_open = True
 
+        self.border_r = tk.Canvas(self.screenbox, width=1, height=self.dscreen_h)
+        self.border_r.pack(anchor='e')
+
         self.capture_screen_mss()
         self.starttime = time.time()
         self.screenbox.mainloop()
 
     def capture_toogle(self, event=None) -> None:
         self.pause = not self.pause
-        color = "red" if self.pause else "green"
+        color = "green" if self.pause else "red"
         self.machine_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
         if not self.valqueue.empty() and self.inprocess:
             try:
                 boxtext = self.valqueue.get()
-                print(boxtext[1])
                 start = time.time()
                 for x in range(len(boxtext[0])):
                     self.put_text_2(
@@ -206,15 +219,9 @@ class App:
                         text=boxtext[1][x]
                     )
                 print("Label placing time: ", time.time()-start)
-                # self.put_text_2(
-                #     x=int(boxtext[0][0][0]), 
-                #     y=int(boxtext[0][0][1]),
-                #     w=int(boxtext[0][2][0]-boxtext[0][0][0]),
-                #     h=int(boxtext[0][2][1]-boxtext[0][0][1]),
-                #     text=boxtext[1]
-                # )
             except Exception as e:
                 print("[error] ", e, "\n")
+                self.closing_cycle()
 
         if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
@@ -247,6 +254,7 @@ class App:
                     yths=float(self.y_thres.get()),    
                 )
                 print("detrec time: ", time.time() - start)
+                print(res)
                 # asyncio.run(self.start_asynctl(res[0],res[1]))
                 # translated = self.__easynmt_translate(texts=res[1])
                 # translated = self.tl.translate(res[1])
@@ -336,7 +344,7 @@ class App:
 
     def closing_cycle(self):
         self.pause = True
-        self.machine_light.config(bg="red")
+        self.machine_light.config(bg="green")
         self.inprocess = False
 
     def __det_textcolor(self, img):
@@ -346,8 +354,8 @@ class App:
         return "#ffffff" if avglum <= 128 else "#000000"
     
     def __adjust_font_size(self, text:str, w:int, h:int) -> int:
-        if not self.paragraphmode.get(): return self.fontdict[h]-3
         fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
+        if not self.paragraphmode.get(): fontsize = self.fontdict[h]-3
         if fontsize < 10 : fontsize = 15
         elif fontsize > 70 : fontsize = 50
         canvas = tk.Canvas()
@@ -392,7 +400,7 @@ class App:
 
 if __name__ == '__main__':
     app = App(
-        src_lang='ja', 
+        src_lang='en', 
         target_lang='id', 
         translator="Google"
     )

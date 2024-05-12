@@ -1,7 +1,6 @@
 import time
 import easyocr
 import cv2
-import numpy as np
 
 class TextDetectionRecognition:
     def __init__(self, language: list[str], use_gpu=True) -> None:
@@ -16,10 +15,11 @@ class TextDetectionRecognition:
     def load_image_arr(self, imagearr):
         self.image = imagearr
     
-    def lang_change(self, lang: list[str]):
-        print("Language change -> ", lang[0])
-        self.reader = easyocr.Reader(lang)
-        print("LEWAT")
+    def lang_change(self, lang: str):
+        langlist = ['en']
+        if lang != 'en': langlist = [lang, 'en']
+        self.reader = easyocr.Reader(lang_list=langlist, change_lang=True)
+        print("Change language completed!")
 
     def read(self, wths = 0.7, pmode = False, yths = 0.5):
         self.grayscale_image()
