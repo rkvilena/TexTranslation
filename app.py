@@ -110,13 +110,18 @@ class TexTranslator:
         self.capturemode = False
         self.pause = True
         self.inprocess = False
+        self.isplacingtext = False
         self.starttime = 0
         self.onchangelang = False
     
     def set_label_config(self) -> None:
+        self.boxeslist: list
+        self.textslist: list
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
+        self.labelplacingidx = 0
         self.fontdict = [0 for _ in range(90)]
+        self.blurksize = 35
         self.fontsize_init()
     
     def apply_widget(self) -> None:
@@ -190,7 +195,7 @@ class TexTranslator:
         self.machine_light.config(state="disabled")
         self.machine_light.pack(anchor="ne")
 
-        # screenbox.overrideredirect(True)
+        # self.screenbox.overrideredirect(True)
         self.__set_screenbox_size()
         self.window_centered(self.screenbox,self.sbw,self.sbh)
         # self.screenbox.resizable(False, False)
@@ -214,18 +219,22 @@ class TexTranslator:
         self.machine_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
-        if not self.valqueue.empty() and self.inprocess:
+        if not self.valqueue.empty():
+            boxestexts = self.valqueue.get()
+            self.boxeslist = boxestexts[0]
+            self.textslist = boxestexts[1]
+            self.isplacingtext = True
+        if self.isplacingtext and self.inprocess:
             try:
-                boxtext = self.valqueue.get()
                 start = time.time()
-                for i in range(len(boxtext[0])):
-                    self.put_text_2(
-                        h=boxtext[0][i][0],
-                        w=boxtext[0][i][1],
-                        x=boxtext[0][i][2],
-                        y=boxtext[0][i][3],
-                        text=boxtext[1][i]
-                    )
+                self.put_text_2(
+                    h=self.boxeslist[self.labelplacingidx][0],
+                    w=self.boxeslist[self.labelplacingidx][1],
+                    x=self.boxeslist[self.labelplacingidx][2],
+                    y=self.boxeslist[self.labelplacingidx][3],
+                    text=self.textslist[self.labelplacingidx]
+                )
+                self.labelplacingidx += 1
                 print("Label placing time: ", time.time()-start)
             except Exception as e:
                 print("[error] ", e, "\n")
@@ -243,7 +252,7 @@ class TexTranslator:
             self.captured_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.last_captured = self.captured_img.copy()
             self.inprocess = True
-        self.screenbox.after(100, self.capture_screen_mss)
+        self.screenbox.after(50, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
         while True:
@@ -319,11 +328,8 @@ class TexTranslator:
         # crop an image and manipulate it as background
         cropped = self.last_captured[y:y+h, x:x+w]
         converted = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
-        ksize = (11,11)
-        converted = cv2.blur(
-            cv2.medianBlur(
-                converted, 13, cv2.BORDER_REPLICATE
-            ), ksize, cv2.BORDER_REPLICATE
+        converted = cv2.medianBlur(
+            converted, self.blurksize, cv2.BORDER_REPLICATE
         )
 
         # create an ImageTk for displayinh
@@ -338,7 +344,7 @@ class TexTranslator:
                              font=('Bahnschrift', fontsize), 
                              anchor='nw')
         if self.paragraphmode: canvas.itemconfig(textid, width=w)
-        canvas.place(x=x,y=y-10, width=w, height=h)
+        canvas.place(x=x,y=y-5, width=w, height=h)
         canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
         # placed text calculation
@@ -352,7 +358,9 @@ class TexTranslator:
     def closing_cycle(self):
         self.pause = True
         self.machine_light.config(bg="green")
+        self.isplacingtext = False
         self.inprocess = False
+        self.labelplacingidx = 0
 
     def __det_textcolor(self, img):
         avglum = int(cv2.mean(
