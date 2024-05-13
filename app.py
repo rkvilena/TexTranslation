@@ -6,28 +6,26 @@
 import asyncio
 import tkinter as tk
 import cv2
-import pygetwindow as gw
 import numpy as np
 import time
-import torch
 import requests
 from threading import Thread
 from tkinter import messagebox
 from queue import Queue
 from mss import mss
-from PIL import Image, ImageTk, ImageFilter
+from PIL import Image, ImageTk
 from translator import EasyNMTranslator, GoogleTranslator
-from textdetrec import TextDetectionRecognition
-from torch.multiprocessing import Process
+from textdetrec import EasyOCRdetrec, WinOCRdetrec
+from memory_profiler import profile 
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
 class TexTranslator:
-    def __init__(self, w=400, h=400, src_lang="", target_lang="", translator="Google") -> None:
+    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr", translator="Google") -> None:
         self.define_widgets(src_lang, target_lang, w=400, h=400)      # Tkinter widget init
-        self.define_components(src_lang, translator)    # Queue, Thread, Screen capture, EasyOCR, Tl init
+        self.define_components(src_lang, detrec, translator)    # Queue, Thread, Screen capture, EasyOCR, Tl init
         self.define_flags()                             # Flags init
         self.set_label_config()                         # Label-related setup
         self.apply_widget()                             # Put every widget in grid
@@ -46,7 +44,7 @@ class TexTranslator:
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
         self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
 
-        self.lang_list = ['en', 'ja', 'id']
+        self.lang_list = ['en', 'ja', 'id', 'ru']
         self.lang_selected_src = tk.StringVar()
         self.lang_selected_src.set(srclang)
         self.lang_selected_target = tk.StringVar()
@@ -69,13 +67,10 @@ class TexTranslator:
         self.changelang_light = tk.Button(self.root, bg="black", width=3)
         self.changelang_light.config(state="disabled")
 
-    def define_components(self, srclang:str, tl:str) -> None:
+    @profile
+    def define_components(self, srclang:str, detrec:str, tl:str) -> None:
         # Queue
         self.valqueue = Queue()
-
-        # Thread
-        self.detrecthread = Thread(target=self.detect_recognize_translate)
-        self.detrecthread.daemon = True
 
         # Screen capture
         self.sct = mss()
@@ -84,9 +79,14 @@ class TexTranslator:
         self.bg_lists: list[tk.PhotoImage] = []
 
         # Detrec and translator
-        langchoice = ['en'] if len(srclang) == 0 or srclang == 'en' else ['en', self.lang_selected_src.get()]
-        print("Loading Detection & Recognition model EasyOCR...")
-        self.detrec = TextDetectionRecognition(langchoice, use_gpu=True)
+        langchoice = ['en'] if len(srclang) == 0 or srclang == 'en' else [self.lang_selected_src.get(),'en']
+        if detrec == "winocr":
+            print("Loading WinOCR configuration...")
+            self.detrec = WinOCRdetrec(langchoice[0])
+        elif detrec == "easyocr":
+            print("Loading EasyOCR configuration...")
+            self.detrec = EasyOCRdetrec(langchoice, use_gpu=True)
+        self.drtype = detrec
 
         if tl == "EasyNMT":
             print("Loading Translation model EasyNMT...")
@@ -144,7 +144,6 @@ class TexTranslator:
             r.grid(column=1, row=3+x)
     
     def run(self) -> None:
-        self.detrecthread.start()
         self.root.mainloop()
     
     def fontsize_init(self) -> None:
@@ -226,7 +225,6 @@ class TexTranslator:
             self.isplacingtext = True
         if self.isplacingtext and self.inprocess:
             try:
-                start = time.time()
                 self.put_text_2(
                     h=self.boxeslist[self.labelplacingidx][0],
                     w=self.boxeslist[self.labelplacingidx][1],
@@ -235,9 +233,8 @@ class TexTranslator:
                     text=self.textslist[self.labelplacingidx]
                 )
                 self.labelplacingidx += 1
-                print("Label placing time: ", time.time()-start)
             except Exception as e:
-                print("[error] ", e, "\n")
+                print("An exception occurred:", type(e).__name__, "–", e)
                 self.closing_cycle()
 
         if not self.pause and not self.inprocess:
@@ -252,43 +249,44 @@ class TexTranslator:
             self.captured_img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
             self.last_captured = self.captured_img.copy()
             self.inprocess = True
+
+
+            # Thread
+            thread = Thread(target=self.detect_recognize_translate)
+            thread.daemon = True
+            thread.start()
+
         self.screenbox.after(50, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
-        while True:
-            if self.captured_img is not None:
-                print("[Thread] OCR Process started")
-                print("[-----------------------------]")
+        if self.captured_img is not None:
+            print("[Thread] OCR Process started")
+            print("[-----------------------------]")
 
-                # Detection & recognition section
-                self.detrec.load_image_arr(self.captured_img)
+            # Detection & recognition section
+            self.detrec.load_image_arr(self.captured_img)
+            res: list
+            if self.drtype == 'winocr':
+                res = self.detrec.read()
+            elif self.drtype == 'easyocr':
                 res = self.detrec.read(
                     wths=float(self.width_thres.get()),
                     pmode=self.paragraphmode.get(),
                     yths=float(self.y_thres.get()),    
                 )
-                print(res)
+            print(res)
 
-                # # Text Translate section
-                # asyncio.run(self.start_asynctl(res[0],res[1]))
-                # translated = self.__easynmt_translate(texts=res[1])
-                # translated = self.tl.translate(res[1])
-                translated = res[1]
-
-                # Bounding-box parsing to (h, w, x, y)
-                finalboxes = []
-                for i in range(len(res[0])):
-                    h = int(res[0][i][2][1]-res[0][i][0][1])
-                    w = int(res[0][i][2][0]-res[0][i][0][0])
-                    x = int(res[0][i][0][0])
-                    y = int(res[0][i][0][1])
-                    finalboxes.append([h,w,x,y])
-                
-                self.valqueue.put([finalboxes,translated])
-                self.textcount = len(res[0])
-                self.captured_img = None
-                self.tl.show_tr_duration()
-                print("[-----------------------------]\n")
+            # # Text Translate section
+            # asyncio.run(self.start_asynctl(res[0],res[1]))
+            # translated = self.__easynmt_translate(texts=res[1])
+            # translated = self.tl.translate(res[1])
+            translated = res[1]
+            
+            self.valqueue.put([res[0],translated])
+            self.textcount = len(res[0])
+            self.captured_img = None
+            self.tl.show_tr_duration()
+            print("[-----------------------------]\n")
     
     async def start_asynctl(self, boxes:list[list], texts:list[str]):
         url = "https://c307-34-143-249-81.ngrok-free.app/"
@@ -344,7 +342,7 @@ class TexTranslator:
                              font=('Bahnschrift', fontsize), 
                              anchor='nw')
         if self.paragraphmode: canvas.itemconfig(textid, width=w)
-        canvas.place(x=x,y=y-5, width=w, height=h)
+        canvas.place(x=x,y=y-10, width=w, height=h)
         canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
         # placed text calculation
@@ -370,9 +368,9 @@ class TexTranslator:
     
     def __adjust_font_size(self, text:str, w:int, h:int) -> int:
         fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
-        if not self.paragraphmode.get(): fontsize = self.fontdict[h]-3
+        # if not self.paragraphmode.get(): fontsize = self.fontdict[h]-3
         if fontsize < 10 : fontsize = 15
-        elif fontsize > 70 : fontsize = 50
+        elif fontsize > 100 : fontsize = 75
         canvas = tk.Canvas()
         textid = canvas.create_text(0, 0, text=text, anchor='nw', width=w)
         
@@ -381,8 +379,8 @@ class TexTranslator:
             bbox = canvas.bbox(textid)
 
             if bbox[3] - bbox[1] <= h: return fontsize
-            if fontsize > 25: fontsize -= 10
-            else: fontsize -= 2
+            if fontsize > 30: fontsize -= 5
+            else: fontsize -= 1
 
     def __destroy_text(self, event, object) -> None:
         if not self.mode_deletemode: return
@@ -417,6 +415,7 @@ if __name__ == '__main__':
     app = TexTranslator(
         src_lang='en', 
         target_lang='id', 
+        detrec="winocr",
         translator="Google"
     )
     app.run()
