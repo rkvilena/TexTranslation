@@ -200,14 +200,22 @@ class TexTranslator:
             btnframe, 
             bg="yellow", 
             width=3,
-            command=self.screenbox.destroy
+            command=self.__close_screenbox
         )
         self.close_sb_btn.pack(side="left")
 
         # Screenbox Configuration
         self.screenbox.overrideredirect(True)
         if self.maxscreen.get(): self.screenbox.state("zoomed")
-        else: self.set_screenbox_position()
+        else: 
+            self.set_screenbox_position()
+            self.sb_border = tk.Canvas(self.screenbox, bg=TRANSPARENT_COLOR)
+            self.sb_border.pack(side="top", fill="both", expand=True)
+            self.sb_border.create_rectangle(
+                0, 0, 1, 1, 
+                outline='#ffffff', 
+                width=2
+            )
         
         self.screenbox.attributes("-transparentcolor", TRANSPARENT_COLOR,'-topmost',1)
         self.screenbox.config(bg=TRANSPARENT_COLOR)
@@ -219,14 +227,6 @@ class TexTranslator:
         self.screenbox.bind("v", lambda event: self.keybind_destroyalltext(event))
 
         self.screenbox_open = True
-        
-        self.sb_border = tk.Canvas(self.screenbox, bg=TRANSPARENT_COLOR)
-        self.sb_border.pack(side="top", fill="both", expand=True)
-        self.sb_border.create_rectangle(
-            0, 0, 1, 1, 
-            outline='#ffffff', 
-            width=3
-        )
 
         self.capture_screen_mss()
         self.starttime = time.time()
@@ -293,8 +293,6 @@ class TexTranslator:
             print("[Execute] Capture Screen.")
             x, y = self.screenbox.winfo_x(), self.screenbox.winfo_y() -8
             w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height()
-            print(x, y)
-            print(h, w)
             mon = {'top': y, 'left':x, 'width':w, 'height':h}
 
             sct_img = self.sct.grab(mon)
@@ -461,6 +459,7 @@ class TexTranslator:
         if len(self.placedlabel) != 0:
             self.__destroy_all_text()
         self.screenbox.destroy()
+        self.root.wm_state("normal")
 
     def window_centered(self, window:tk.Tk, w, h) -> None:
         x = (self.dscreen_w - w) // 2
@@ -474,9 +473,6 @@ class TexTranslator:
         x, y = min(x1,x2), min(y1,y2)
         w = abs(x1-x2)
         h = abs(y1-y2)
-        print(x,y)
-        print(h,w)
-        print("--------")
         self.screenbox.geometry(f"{w}x{h}+{x}+{y}")
 
 if __name__ == '__main__':
