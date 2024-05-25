@@ -9,23 +9,25 @@ import cv2
 import numpy as np
 import time
 import requests
+import ctypes
 from threading import Thread
 from tkinter import messagebox
 from queue import Queue
 from mss import mss
 from PIL import Image, ImageTk
-from translator import EasyNMTranslator, GoogleTranslator
-from textdetrec import EasyOCRdetrec, WinOCRdetrec
-from memory_profiler import profile 
+from lib.translator import GoogleTranslator
+from lib.textdetrec import EasyOCRdetrec, WinOCRdetrec
+from memory_profiler import profile
+# from wscreenshot import Screenshot
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
 class TexTranslator:
-    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr", translator="Google") -> None:
+    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr") -> None:
         self.define_widgets(src_lang, target_lang, w=400, h=400)      # Tkinter widget init
-        self.define_components(src_lang, detrec, translator)    # Queue, Thread, Screen capture, EasyOCR, Tl init
+        self.define_components(src_lang, detrec)    # Queue, Thread, Screen capture, EasyOCR, Tl init
         self.define_flags()                             # Flags init
         self.set_label_config()                         # Label-related setup
         self.apply_widget()                             # Put every widget in grid
@@ -39,8 +41,8 @@ class TexTranslator:
         self.window_centered(self.root,w,h)
 
         self.screenbox = None
-        self.sbw = 500
-        self.sbh = 250
+        self.sbw = ctypes.windll.user32.GetSystemMetrics(0)
+        self.sbh = ctypes.windll.user32.GetSystemMetrics(1)
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
         self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
 
@@ -60,15 +62,13 @@ class TexTranslator:
         self.y_thres = tk.StringVar(self.root, "0.6")
         self.sizeslist = ("400x300", "700x450", "1000x600", "1300x750")
         self.paragraphmode = tk.BooleanVar()
-        self.gpumode = tk.BooleanVar()
         self.root_ispgraph = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
-        # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
 
         self.changelang_light = tk.Button(self.root, bg="black", width=3)
         self.changelang_light.config(state="disabled")
 
     @profile
-    def define_components(self, srclang:str, detrec:str, tl:str) -> None:
+    def define_components(self, srclang:str, detrec:str) -> None:
         # Queue
         self.valqueue = Queue()
 
@@ -88,18 +88,11 @@ class TexTranslator:
             self.detrec = EasyOCRdetrec(langchoice, use_gpu=True)
         self.drtype = detrec
 
-        if tl == "EasyNMT":
-            print("Loading Translation model EasyNMT...")
-            self.tl = EasyNMTranslator(
-                self.lang_selected_src.get(),
-                self.lang_selected_target.get()
-            )
-        elif tl == "Google":
-            print("Loading Translation model GoogleTranslator...")
-            self.tl = GoogleTranslator(
-                self.lang_selected_src.get(),
-                self.lang_selected_target.get()
-            )
+        print("Loading Translation model GoogleTranslator...")
+        self.tl = GoogleTranslator(
+            self.lang_selected_src.get(),
+            self.lang_selected_target.get()
+        )
         print("Models loading completed!")
         print("Starting TexTranslator App...")
     
@@ -132,7 +125,6 @@ class TexTranslator:
         self.language_menu_src.grid(column=1, row=1)
         self.language_menu_target.grid(column=1, row=2)
         self.root_ispgraph.grid(column=0,row=3)
-        # self.root_usegpu.grid(column=0,row=4)
         self.changelang_light.grid(column=2, row=1)
         for x in range(len(self.sizeslist)):
             r = tk.Radiobutton(
@@ -190,14 +182,20 @@ class TexTranslator:
 
         self.screenbox = tk.Toplevel(self.root)
         self.screenbox.title(SCREENBOX_NAME)
-        self.machine_light = tk.Button(self.screenbox, bg="green", width=3)
-        self.machine_light.config(state="disabled")
-        self.machine_light.pack(anchor="ne")
+        self.machine_light = tk.Button(
+            self.screenbox, 
+            bg="green", 
+            width=3,
+            command=self.capture_toogle
+        )
+        # self.machine_light.config(state="disabled")
+        self.machine_light.pack(anchor="n")
 
-        # self.screenbox.overrideredirect(True)
-        self.__set_screenbox_size()
+        self.screenbox.overrideredirect(True)
+        # self.__set_screenbox_size()
         self.window_centered(self.screenbox,self.sbw,self.sbh)
         # self.screenbox.resizable(False, False)
+        self.screenbox.state("zoomed")
         self.screenbox.attributes("-transparentcolor", TRANSPARENT_COLOR,'-topmost',1)
         self.screenbox.config(bg=TRANSPARENT_COLOR)
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
@@ -238,8 +236,8 @@ class TexTranslator:
 
         if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
-            x, y = self.screenbox.winfo_x() + 8, self.screenbox.winfo_y() + 30
-            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height() + 8
+            x, y = self.screenbox.winfo_x(), self.screenbox.winfo_y() -8
+            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height()
             mon = {'top': y, 'left':x, 'width':w, 'height':h}
 
             sct_img = self.sct.grab(mon)
@@ -272,6 +270,9 @@ class TexTranslator:
                     pmode=self.paragraphmode.get(),
                     yths=float(self.y_thres.get()),    
                 )
+            elif self.drtype == 'paddleocr':
+                res = self.detrec.read()
+                print(self.detrec.detrectime)
             print(res)
 
             # # Text Translate section
@@ -415,6 +416,5 @@ if __name__ == '__main__':
         src_lang='en', 
         target_lang='id', 
         detrec="winocr",
-        translator="Google"
     )
     app.run()

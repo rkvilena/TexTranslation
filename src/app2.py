@@ -25,9 +25,9 @@ SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
 class TexTranslator:
-    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr", translator="Google") -> None:
+    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr") -> None:
         self.define_widgets(src_lang, target_lang, w=400, h=400)      # Tkinter widget init
-        self.define_components(src_lang, detrec, translator)    # Queue, Thread, Screen capture, EasyOCR, Tl init
+        self.define_components(src_lang, detrec)    # Queue, Thread, Screen capture, EasyOCR, Tl init
         self.define_flags()                             # Flags init
         self.set_label_config()                         # Label-related setup
         self.apply_widget()                             # Put every widget in grid
@@ -43,7 +43,7 @@ class TexTranslator:
         self.screenbox = None
         self.sbw = ctypes.windll.user32.GetSystemMetrics(0)
         self.sbh = ctypes.windll.user32.GetSystemMetrics(1)
-        self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.__open_screenbox)
+        self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.select_area)
         self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
 
         self.lang_list = ['en', 'ja', 'id', 'ru']
@@ -62,15 +62,15 @@ class TexTranslator:
         self.y_thres = tk.StringVar(self.root, "0.6")
         self.sizeslist = ("400x300", "700x450", "1000x600", "1300x750")
         self.paragraphmode = tk.BooleanVar()
-        self.gpumode = tk.BooleanVar()
         self.root_ispgraph = tk.Checkbutton(self.root, text="Paragraph mode", variable=self.paragraphmode, onvalue=True, offvalue=False)
-        # self.root_usegpu = tk.Checkbutton(self.root, text="GPU mode", variable=self.gpumode, onvalue=True, offvalue=False)
+        self.maxscreen = tk.BooleanVar()
+        self.root_ismaxscreen = tk.Checkbutton(self.root, text="Max screen mode", variable=self.maxscreen, onvalue=True, offvalue=False)
 
         self.changelang_light = tk.Button(self.root, bg="black", width=3)
         self.changelang_light.config(state="disabled")
 
     @profile
-    def define_components(self, srclang:str, detrec:str, tl:str) -> None:
+    def define_components(self, srclang:str, detrec:str) -> None:
         # Queue
         self.valqueue = Queue()
 
@@ -88,23 +88,13 @@ class TexTranslator:
         elif detrec == "easyocr":
             print("Loading EasyOCR configuration...")
             self.detrec = EasyOCRdetrec(langchoice, use_gpu=True)
-        # elif detrec == "paddleocr":
-        #     print("Loading PaddleOCR configuration...")
-        #     self.detrec = PaddleOCRdetrec(langchoice[0])
         self.drtype = detrec
 
-        if tl == "EasyNMT":
-            print("Loading Translation model EasyNMT...")
-            self.tl = EasyNMTranslator(
-                self.lang_selected_src.get(),
-                self.lang_selected_target.get()
-            )
-        elif tl == "Google":
-            print("Loading Translation model GoogleTranslator...")
-            self.tl = GoogleTranslator(
-                self.lang_selected_src.get(),
-                self.lang_selected_target.get()
-            )
+        print("Loading Translation model GoogleTranslator...")
+        self.tl = GoogleTranslator(
+            self.lang_selected_src.get(),
+            self.lang_selected_target.get()
+        )
         print("Models loading completed!")
         print("Starting TexTranslator App...")
     
@@ -137,7 +127,7 @@ class TexTranslator:
         self.language_menu_src.grid(column=1, row=1)
         self.language_menu_target.grid(column=1, row=2)
         self.root_ispgraph.grid(column=0,row=3)
-        # self.root_usegpu.grid(column=0,row=4)
+        self.root_ismaxscreen.grid(column=0,row=4)
         self.changelang_light.grid(column=2, row=1)
         for x in range(len(self.sizeslist)):
             r = tk.Radiobutton(
@@ -188,40 +178,92 @@ class TexTranslator:
         self.sbh = sbh
 
     def keybind_openscreenbox(self, event) -> None:
-        self.__open_screenbox()
+        self.select_area()
 
     def __open_screenbox(self) -> None:
-        if self.screenbox_open: return
+        if self.screenbox_open: self.screenbox.destroy()
 
         self.screenbox = tk.Toplevel(self.root)
         self.screenbox.title(SCREENBOX_NAME)
+
+        # Button organization
+        btnframe = tk.Frame(self.screenbox, background=TRANSPARENT_COLOR)
+        btnframe.pack(side="top", fill="x", anchor="n")
         self.machine_light = tk.Button(
-            self.screenbox, 
+            btnframe,
             bg="green", 
-            width=3,
+            width=5,
             command=self.capture_toogle
         )
-        # self.machine_light.config(state="disabled")
-        self.machine_light.pack(anchor="n")
+        self.machine_light.pack(side="left")
+        self.close_sb_btn = tk.Button(
+            btnframe, 
+            bg="yellow", 
+            width=3,
+            command=self.screenbox.destroy
+        )
+        self.close_sb_btn.pack(side="left")
 
+        # Screenbox Configuration
         self.screenbox.overrideredirect(True)
-        # self.__set_screenbox_size()
-        self.window_centered(self.screenbox,self.sbw,self.sbh)
-        # self.screenbox.resizable(False, False)
-        self.screenbox.state("zoomed")
+        if self.maxscreen.get(): self.screenbox.state("zoomed")
+        else: self.set_screenbox_position()
+        
         self.screenbox.attributes("-transparentcolor", TRANSPARENT_COLOR,'-topmost',1)
         self.screenbox.config(bg=TRANSPARENT_COLOR)
         self.screenbox.protocol("WM_DELETE_WINDOW", self.__close_screenbox)
 
+        # Screenbox keyboard binding
         self.screenbox.bind("d", self.__deletemode)
         self.screenbox.bind("c", lambda event: self.capture_toogle(event))
         self.screenbox.bind("v", lambda event: self.keybind_destroyalltext(event))
 
         self.screenbox_open = True
+        
+        self.sb_border = tk.Canvas(self.screenbox, bg=TRANSPARENT_COLOR)
+        self.sb_border.pack(side="top", fill="both", expand=True)
+        self.sb_border.create_rectangle(
+            0, 0, 1, 1, 
+            outline='#ffffff', 
+            width=3
+        )
 
         self.capture_screen_mss()
         self.starttime = time.time()
         self.screenbox.mainloop()
+    
+    def select_area(self):
+        self.root.wm_state("iconic")
+        if self.maxscreen.get(): self.__open_screenbox()
+        self.overlay = tk.Toplevel(self.root)
+        self.overlay.overrideredirect(True)
+        self.overlay.attributes('-alpha', 0.4)
+        self.overlay.state("zoomed")
+        self.overlaycanvas = tk.Canvas(self.overlay, bg="black")
+        self.overlaycanvas.pack(side="top", fill="both", expand=True)
+        self.overlaycanvas.bind("<Button-1>", self.__get_start_coor)
+        self.overlaycanvas.bind("<ButtonRelease-1>", self.__get_end_coor)
+        self.overlaycanvas.bind("<B1-Motion>", self.__drag_area)
+    
+    def __get_start_coor(self, event):
+        self.__start_point = (event.x, event.y)
+        self.area = self.overlaycanvas.create_rectangle(
+            0, 0, 1, 1, 
+            outline='#4fff38', 
+            width=3
+        )
+
+    def __drag_area(self, event):
+        self.overlaycanvas.coords(
+            self.area, 
+            self.__start_point[0], self.__start_point[1], 
+            event.x, event.y
+        )
+
+    def __get_end_coor(self, event):
+        self.__end_point = (event.x, event.y)
+        self.overlay.destroy()
+        self.__open_screenbox()
 
     def capture_toogle(self, event=None) -> None:
         self.pause = not self.pause
@@ -251,6 +293,8 @@ class TexTranslator:
             print("[Execute] Capture Screen.")
             x, y = self.screenbox.winfo_x(), self.screenbox.winfo_y() -8
             w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height()
+            print(x, y)
+            print(h, w)
             mon = {'top': y, 'left':x, 'width':w, 'height':h}
 
             sct_img = self.sct.grab(mon)
@@ -424,11 +468,21 @@ class TexTranslator:
 
         window.geometry(f"{w}x{h}+{x}+{y}")
 
+    def set_screenbox_position(self) -> None:
+        x1, y1 = self.__start_point
+        x2, y2 = self.__end_point
+        x, y = min(x1,x2), min(y1,y2)
+        w = abs(x1-x2)
+        h = abs(y1-y2)
+        print(x,y)
+        print(h,w)
+        print("--------")
+        self.screenbox.geometry(f"{w}x{h}+{x}+{y}")
+
 if __name__ == '__main__':
     app = TexTranslator(
         src_lang='en', 
         target_lang='id', 
-        detrec="easyocr",
-        translator="Google"
+        detrec="winocr",
     )
     app.run()

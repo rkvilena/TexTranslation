@@ -67,7 +67,7 @@ class WinOCRdetrec:
         self.drawnimg   = None
         self.readresult: list[list[tuple[int,int,int,int], str]]
         self.detrectime = 0.0
-        self.__approx_init()
+        # self.__approx_init()
 
     def __approx_init(self) -> None:
         winw = [357, 462, 537, 710, 814, 1013, 1315]
@@ -115,7 +115,7 @@ class WinOCRdetrec:
             for words in textlist["words"]:
                 h = max(h, words['bounding_rect']['height'])
                 w += words['bounding_rect']['width']
-            w = int(w*1.1525) if w >= 200 else int(w*1.1)
+            w = int(w*1.3) if w >= 200 else int(w*1.1)
             position_list.append((int(h*1.4), w, x, y))
         return position_list
 
