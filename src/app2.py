@@ -3,6 +3,7 @@
 # import win32con
 # import win32api
 # import tkcap
+import sys
 import asyncio
 import tkinter as tk
 import cv2
@@ -18,15 +19,14 @@ from PIL import Image, ImageTk
 from lib.translator import GoogleTranslator
 from lib.textdetrec import EasyOCRdetrec, WinOCRdetrec
 from memory_profiler import profile
-# from wscreenshot import Screenshot
 
 APP_NAME = "TexTranslation"
 SCREENBOX_NAME = "Screenbox"
 TRANSPARENT_COLOR = "#66cdab"
 
 class TexTranslator:
-    def __init__(self, w=400, h=400, src_lang="", target_lang="", detrec="easyocr") -> None:
-        self.define_widgets(src_lang, target_lang, w=400, h=400)      # Tkinter widget init
+    def __init__(self, w=300, h=150, src_lang="", target_lang="", detrec="easyocr") -> None:
+        self.define_widgets(src_lang, target_lang, w, h)      # Tkinter widget init
         self.define_components(src_lang, detrec)    # Queue, Thread, Screen capture, EasyOCR, Tl init
         self.define_flags()                             # Flags init
         self.set_label_config()                         # Label-related setup
@@ -44,7 +44,7 @@ class TexTranslator:
         self.sbw = ctypes.windll.user32.GetSystemMetrics(0)
         self.sbh = ctypes.windll.user32.GetSystemMetrics(1)
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.select_area)
-        self.root.bind("s", lambda event: self.keybind_openscreenbox(event))
+        self.root.bind("s", self.keybind_openscreenbox)
 
         self.lang_list = ['en', 'ja', 'id', 'ru']
         self.lang_selected_src = tk.StringVar()
@@ -69,7 +69,6 @@ class TexTranslator:
         self.changelang_light = tk.Button(self.root, bg="black", width=3)
         self.changelang_light.config(state="disabled")
 
-    @profile
     def define_components(self, srclang:str, detrec:str) -> None:
         # Queue
         self.valqueue = Queue()
@@ -126,17 +125,17 @@ class TexTranslator:
         self.deletemode_btn.grid(column=1, row=0)
         self.language_menu_src.grid(column=1, row=1)
         self.language_menu_target.grid(column=1, row=2)
-        self.root_ispgraph.grid(column=0,row=3)
+        if self.drtype == 'easyocr': self.root_ispgraph.grid(column=0,row=3)
         self.root_ismaxscreen.grid(column=0,row=4)
         self.changelang_light.grid(column=2, row=1)
-        for x in range(len(self.sizeslist)):
-            r = tk.Radiobutton(
-                self.root,
-                text=self.sizeslist[x],
-                value=self.sizeslist[x],
-                variable=self.sb_size
-            )
-            r.grid(column=1, row=3+x)
+        # for x in range(len(self.sizeslist)):
+        #     r = tk.Radiobutton(
+        #         self.root,
+        #         text=self.sizeslist[x],
+        #         value=self.sizeslist[x],
+        #         variable=self.sb_size
+        #     )
+        #     r.grid(column=1, row=3+x)
     
     def run(self) -> None:
         self.root.mainloop()
@@ -187,22 +186,22 @@ class TexTranslator:
         self.screenbox.title(SCREENBOX_NAME)
 
         # Button organization
-        btnframe = tk.Frame(self.screenbox, background=TRANSPARENT_COLOR)
-        btnframe.pack(side="top", fill="x", anchor="n")
+        self.sb_btnframe = tk.Frame(self.screenbox, background=TRANSPARENT_COLOR)
+        self.sb_btnframe.pack(side="top", fill="x", anchor="n")
         self.machine_light = tk.Button(
-            btnframe,
+            self.sb_btnframe,
             bg="green", 
-            width=5,
+            width=6,
             command=self.capture_toogle
         )
         self.machine_light.pack(side="left")
         self.close_sb_btn = tk.Button(
-            btnframe, 
-            bg="yellow", 
+            self.sb_btnframe, 
+            bg="red", 
             width=3,
             command=self.__close_screenbox
         )
-        self.close_sb_btn.pack(side="left")
+        self.close_sb_btn.pack(side="right")
 
         # Screenbox Configuration
         self.screenbox.overrideredirect(True)
@@ -267,7 +266,7 @@ class TexTranslator:
 
     def capture_toogle(self, event=None) -> None:
         self.pause = not self.pause
-        color = "green" if self.pause else "red"
+        color = "green" if self.pause else "#ff4f4f"
         self.machine_light.config(bg=color)
 
     def capture_screen_mss(self, event=None) -> None:
@@ -291,8 +290,11 @@ class TexTranslator:
 
         if not self.pause and not self.inprocess:
             print("[Execute] Capture Screen.")
-            x, y = self.screenbox.winfo_x(), self.screenbox.winfo_y() -8
-            w, h = self.screenbox.winfo_width(), self.screenbox.winfo_height()
+            x, w = self.screenbox.winfo_x(), self.screenbox.winfo_width()
+            y, h = self.screenbox.winfo_y(), self.screenbox.winfo_height()
+            if not self.maxscreen.get():
+                y += self.sb_btnframe.winfo_height() + 8
+                h -= 25
             mon = {'top': y, 'left':x, 'width':w, 'height':h}
 
             sct_img = self.sct.grab(mon)
@@ -302,6 +304,8 @@ class TexTranslator:
             self.last_captured = self.captured_img.copy()
             self.inprocess = True
 
+            cv2.imshow("window", self.captured_img)
+            cv2.waitKey(0)
             # Thread
             thread = Thread(target=self.detect_recognize_translate)
             thread.daemon = True
@@ -396,7 +400,8 @@ class TexTranslator:
                              font=('Bahnschrift', fontsize), 
                              anchor='nw')
         if self.paragraphmode: canvas.itemconfig(textid, width=w)
-        canvas.place(x=x,y=y-10, width=w, height=h)
+        if not self.maxscreen.get(): y += (self.sb_btnframe.winfo_height() + 2)
+        canvas.place(x=x,y=y, width=w, height=h)
         canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
         # placed text calculation
@@ -473,12 +478,13 @@ class TexTranslator:
         x, y = min(x1,x2), min(y1,y2)
         w = abs(x1-x2)
         h = abs(y1-y2)
-        self.screenbox.geometry(f"{w}x{h}+{x}+{y}")
+        self.screenbox.geometry(f"{w}x{h+30}+{x}+{y-30}")
 
 if __name__ == '__main__':
+    ocrtype = sys.argv[1]
     app = TexTranslator(
         src_lang='en', 
         target_lang='id', 
-        detrec="winocr",
+        detrec=ocrtype,
     )
     app.run()
