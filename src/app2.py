@@ -304,8 +304,9 @@ class TexTranslator:
             self.last_captured = self.captured_img.copy()
             self.inprocess = True
 
-            cv2.imshow("window", self.captured_img)
-            cv2.waitKey(0)
+            # cv2.imshow("window", self.captured_img)
+            # cv2.waitKey(0)
+            
             # Thread
             thread = Thread(target=self.detect_recognize_translate)
             thread.daemon = True
@@ -400,7 +401,7 @@ class TexTranslator:
                              font=('Bahnschrift', fontsize), 
                              anchor='nw')
         if self.paragraphmode: canvas.itemconfig(textid, width=w)
-        if not self.maxscreen.get(): y += (self.sb_btnframe.winfo_height() + 2)
+        if not self.maxscreen.get(): y += (self.sb_btnframe.winfo_height() + 5)
         canvas.place(x=x,y=y, width=w, height=h)
         canvas.bind("<Button-1>", lambda event: self.__destroy_text(event, canvas))
 
