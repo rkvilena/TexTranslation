@@ -46,7 +46,7 @@ class TexTranslator:
         self.root_sbox_btn = tk.Button(self.root, text = 'Screenbox', bd = '4', command = self.select_area)
         self.root.bind("s", self.keybind_openscreenbox)
 
-        self.lang_list = ['en', 'ja', 'id', 'ru']
+        self.lang_list = ['en', 'ja', 'id', 'ru', 'ko', 'ar', 'ch_sim', 'ch_tra']
         self.lang_selected_src = tk.StringVar()
         self.lang_selected_src.set(srclang)
         self.lang_selected_target = tk.StringVar()
@@ -54,7 +54,7 @@ class TexTranslator:
         self.language_menu_src = tk.OptionMenu(self.root, self.lang_selected_src, *self.lang_list, command = self.set_language_flag)
         self.srclang_lbl = tk.Label(self.root, text="Source Language")
         self.targetlang_lbl = tk.Label(self.root, text="Target Language")
-        self.language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *self.lang_list)
+        self.language_menu_target = tk.OptionMenu(self.root, self.lang_selected_target, *self.lang_list, command = self.set_target_language)
         self.deletemode_btn = tk.Button(self.root, text="Delete Mode", bd="4", command=self.__deletemode)
 
         self.sb_size = tk.StringVar(self.root, "700x450")
@@ -114,9 +114,7 @@ class TexTranslator:
         self.placedlabel: list[tk.Canvas] = []
         self.labelcount = 0
         self.labelplacingidx = 0
-        self.fontdict = [0 for _ in range(90)]
         self.blurksize = 35
-        self.fontsize_init()
     
     def apply_widget(self) -> None:
         self.root_sbox_btn.grid(column=0, row=0)
@@ -128,29 +126,9 @@ class TexTranslator:
         if self.drtype == 'easyocr': self.root_ispgraph.grid(column=0,row=3)
         self.root_ismaxscreen.grid(column=0,row=4)
         self.changelang_light.grid(column=2, row=1)
-        # for x in range(len(self.sizeslist)):
-        #     r = tk.Radiobutton(
-        #         self.root,
-        #         text=self.sizeslist[x],
-        #         value=self.sizeslist[x],
-        #         variable=self.sb_size
-        #     )
-        #     r.grid(column=1, row=3+x)
     
     def run(self) -> None:
         self.root.mainloop()
-    
-    def fontsize_init(self) -> None:
-        cn = tk.Canvas(self.root)
-        limit = 0
-        for x in range (8,51):
-            textid = cn.create_text(0,0,text="Tl",font=('Bahnschrift', x))
-            box = cn.bbox(textid)
-            i = box[3]-box[1]
-            while i >= limit:
-                self.fontdict[i] = x
-                i -= 1
-            limit = box[3]-box[1]
 
     def set_language_flag(self, event=None):
         self.onchangelang = True
@@ -163,18 +141,15 @@ class TexTranslator:
             messagebox.showinfo("Info", "Please keep away from clicking anything on this app until the next notification. Click 'OK' to start change language.")
             self.detrec.lang_change(self.lang_selected_src.get())
             self.onchangelang = False
-            messagebox.showinfo("Info", "Change language completed!")
+            messagebox.showinfo("Info", "Change source language completed!")
             self.changelang_light.config(bg="black")
+    
+    def set_target_language(self, event=None):
+        self.change_targetlang()
 
-    def __set_screenbox_size(self) -> None:
-        sbw: int
-        sbh: int
-        if self.sb_size.get() == self.sizeslist[0]: sbw, sbh = (400, 300)
-        elif self.sb_size.get() == self.sizeslist[1]: sbw, sbh = (700, 450)
-        elif self.sb_size.get() == self.sizeslist[2]: sbw, sbh = (1000, 600)
-        elif self.sb_size.get() == self.sizeslist[3]: sbw, sbh = (1300, 750)
-        self.sbw = sbw
-        self.sbh = sbh
+    def change_targetlang(self):
+        self.tl.change_lang_target(self.lang_selected_target.get())
+        messagebox.showinfo("Info", "Change target language completed!")
 
     def keybind_openscreenbox(self, event) -> None:
         self.select_area()
@@ -312,7 +287,7 @@ class TexTranslator:
             thread.daemon = True
             thread.start()
 
-        self.screenbox.after(25, self.capture_screen_mss)
+        self.screenbox.after(20, self.capture_screen_mss)
 
     def detect_recognize_translate(self):
         if self.captured_img is not None:
@@ -330,21 +305,24 @@ class TexTranslator:
                     pmode=self.paragraphmode.get(),
                     yths=float(self.y_thres.get()),    
                 )
-            elif self.drtype == 'paddleocr':
-                res = self.detrec.read()
-                print(self.detrec.detrectime)
-            print(res)
 
+            if len(res[0]) == 0 or len(res[1]) == 0:
+                self.closing_cycle()
+                self.captured_img = None
+                return
+            
             # # Text Translate section
             # asyncio.run(self.start_asynctl(res[0],res[1]))
             # translated = self.__easynmt_translate(texts=res[1])
-            # translated = self.tl.translate(res[1])
-            translated = res[1]
-            
+            translated = self.tl.translate(res[1])
+            # translated = res[1]
+            print(res[1])
+            print(translated)
+
             self.valqueue.put([res[0],translated])
             self.textcount = len(res[0])
             self.captured_img = None
-            self.tl.show_tr_duration()
+            
             print("[-----------------------------]\n")
     
     async def start_asynctl(self, boxes:list[list], texts:list[str]):
@@ -421,6 +399,8 @@ class TexTranslator:
         self.inprocess = False
         self.labelplacingidx = 0
 
+        self.get_exec_info()
+
     def __det_textcolor(self, img):
         avglum = int(cv2.mean(
             cv2.cvtColor(img, cv2.COLOR_BGR2HSV)[:,:,2]
@@ -429,7 +409,6 @@ class TexTranslator:
     
     def __adjust_font_size(self, text:str, w:int, h:int) -> int:
         fontsize = int((h * (self.screenbox.winfo_height() * 1.25)) // self.dscreen_h)
-        # if not self.paragraphmode.get(): fontsize = self.fontdict[h]-3
         if fontsize < 10 : fontsize = 15
         elif fontsize > 100 : fontsize = 75
         canvas = tk.Canvas()
@@ -480,6 +459,14 @@ class TexTranslator:
         w = abs(x1-x2)
         h = abs(y1-y2)
         self.screenbox.geometry(f"{w}x{h+30}+{x}+{y-30}")
+
+    def get_exec_info(self) -> None:
+        drtime = self.detrec.get_detrec_duration()
+        trtime = self.tl.get_tr_duration()
+
+        print("detrec exec_time:", drtime)
+        print("translate exec_time:", trtime)
+        print("total exec time:", round(drtime + trtime,3))
 
 if __name__ == '__main__':
     ocrtype = sys.argv[1]

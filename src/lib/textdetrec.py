@@ -13,7 +13,7 @@ class EasyOCRdetrec:
         self.image      = None
         self.drawnimg   = None
         self.readresult: tuple[list[list[int,int]],str,float]
-        self.detrectime = 0.0
+        self.exec_time = 0.0
 
     def load_image_file(self, imagepath):
         self.image = cv2.imread(imagepath)
@@ -28,7 +28,7 @@ class EasyOCRdetrec:
         print("Change language completed!")
 
     def read(self, wths = 0.7, pmode = False, yths = 0.5):
-        self.detrectime = time.time()
+        self.exec_time = time.time()
         self.grayscale_image()
         self.readresult = self.reader.readtext(
             self.image,
@@ -54,11 +54,14 @@ class EasyOCRdetrec:
             y = int(boxes[i][0][1])
             finalboxes.append((h,w,x,y))
         texts = [item[1] for item in self.readresult]
-        self.detrectime = time.time()-self.detrectime
+        self.exec_time = time.time()-self.exec_time
         return [finalboxes, texts]
 
     def show_detrec_duration(self):
-        print(f"Detection & Recognition time: {self.detrectime}")
+        print(f"Detection & Recognition time: {self.exec_time}")
+
+    def get_detrec_duration(self):
+        return self.exec_time
 
 class WinOCRdetrec:
     def __init__(self, language: str) -> None:
@@ -66,7 +69,7 @@ class WinOCRdetrec:
         self.image      = None
         self.drawnimg   = None
         self.readresult: list[list[tuple[int,int,int,int], str]]
-        self.detrectime = 0.0
+        self.exec_time = 0.0
         # self.__approx_init()
 
     def __approx_init(self) -> None:
@@ -87,10 +90,10 @@ class WinOCRdetrec:
         self.lang = lang
 
     def read(self):
-        self.detrectime = time.time()
+        self.exec_time = time.time()
         res = json.loads(json.dumps(winocr.recognize_cv2_sync(self.image, self.lang)))
         self.readresult = [self.get_bbox_result(res),self.get_text_result(res)]
-        self.detrectime = time.time()-self.detrectime
+        self.exec_time = time.time()-self.exec_time
         return self.readresult
 
     def grayscale_image(self):
@@ -120,7 +123,10 @@ class WinOCRdetrec:
         return position_list
 
     def show_detrec_duration(self) -> None:
-        print(f"Detection & Recognition time: {self.detrectime}")
+        print(f"Detection & Recognition time: {self.exec_time}")
+    
+    def get_detrec_duration(self) -> None:
+        return self.exec_time
 
 class PaddleOCRdetrec:
     def __init__(self, language: str) -> None:
