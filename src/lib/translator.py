@@ -2,6 +2,7 @@ import time
 import torch
 import asyncio
 import os
+import html
 import deep_translator as deeptl
 from google.cloud import translate_v2 as translate
 # from easynmt import EasyNMT
@@ -75,6 +76,8 @@ class GoogleTranslator(Translator):
         else: translated = self.executetl_splitted(texts)
 
         self.exec_time = time.time() - start
+
+        translated = [html.unescape(el) for el in translated]
         return translated
 
     def executetl_normal(self, texts:list[str]) -> list[str]:

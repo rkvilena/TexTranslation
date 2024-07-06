@@ -1,0 +1,2 @@
+Replace the original easyocr.py file with the one in this folder
+- Enable runtime language change
